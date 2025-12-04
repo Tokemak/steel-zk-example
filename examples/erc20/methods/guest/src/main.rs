@@ -71,3 +71,5 @@ fn main() {
     println!("returns: {:?}", returns._1);
     println!("returns: {:?}", returns._2);
 }
+
+// this part is not run, it is passed to the host as a binary for running and proof generation

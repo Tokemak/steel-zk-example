@@ -72,6 +72,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+
+    println!("Starting ERC20 example...");
     // Initialize tracing. In order to view logs, run `RUST_LOG=info cargo run`
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
