@@ -1,5 +1,5 @@
 [package]
-name = "host"
+name = "debt-reporting-host" 
 version = "0.1.0"
 edition = "2021"
 
@@ -8,13 +8,15 @@ alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-erc20-methods = { workspace = true }
 risc0-steel = { workspace = true, features = ["host"] }
 risc0-zkvm = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
 hex = "0.4"
+debt-reporting-methods = { workspace = true }
+debt-reporting-abi = {workspace = true}
+
 
 [profile.dev]
 opt-level = 0

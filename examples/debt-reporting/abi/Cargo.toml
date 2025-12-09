@@ -1,0 +1,8 @@
+[package]
+name = "debt-reporting-abi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
