@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloy_sol_types::SolType;
 use anyhow::{Context, Result};
+use clap::Parser;
+use debt_reporting_abi::{
+    IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
+};
+use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
 use risc0_steel::{
     ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
-    Commitment,
+    Commitment, Contract,
 };
 use risc0_zkvm::{default_executor, ExecutorEnv};
 use tracing_subscriber::EnvFilter;
-
-use alloy_sol_types::SolType;
-
-use clap::Parser;
-use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
 use url::Url;
 
 /// Simple program to show the use of Ethereum contract data inside the guest.
@@ -35,6 +36,8 @@ struct Args {
     rpc_url: Url,
 }
 
+// the host has to preflight the input data, passes the guest the needed EVM data
+
 #[tokio::main]
 async fn main() -> Result<()> {
     println!("Starting Debt Reporting example...");
@@ -43,13 +46,21 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-
-    let env = EthEvmEnv::builder()
+    let mut env = EthEvmEnv::builder()
         .rpc(args.rpc_url)
         .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
         .build()
         .await?;
 
+    let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+
+    let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
+        lpToken: A_LP_TOKEN,
+        pool: A_LP_TOKEN,
+        quoteToken: USDC_MAINNET,
+    };
+
+    let _ = contract.call_builder(&call).call().await?;
     let input = env.into_input().await?;
 
     println!("Running the guest with the constructed input...");
@@ -73,58 +84,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
-// fn _make_get_range_prices_lp_token_calls(
-//     lp_tokens: Vec<Address>,
-//     pools: Vec<Address>,
-//     quote_token: Address,
-// ) -> Vec<IRootPriceOracle::getRangePricesLPCall> {
-//     if lp_tokens.len() != pools.len() {
-//         panic!(
-//             "lp_tokens and pools must have the same length. lp_tokens={}, pools={}",
-//             lp_tokens.len(),
-//             pools.len(),
-//         );
-//     }
-
-//     let mut calls = Vec::new();
-//     for (lp_token, pool) in lp_tokens.into_iter().zip(pools.into_iter()) {
-//         calls.push(IRootPriceOracle::getRangePricesLPCall {
-//             lpToken: lp_token,
-//             pool: pool,
-//             quoteToken: quote_token,
-//         });
-//     }
-
-//     return calls;
-// }
-
-// fn _simple_make_calls() -> Vec<IRootPriceOracle::getRangePricesLPCall> {
-//     let some_vaults: Vec<Address> = vec![
-//         address!("64273624eb57c5cA961d366CBF3968e760Bf0452"),
-//         address!("0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"),
-//     ];
-//     let some_pools: Vec<Address> = vec![
-//         address!("64273624eb57c5cA961d366CBF3968e760Bf0452"),
-//         address!("0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"),
-//     ];
-
-//     let calls: Vec<IRootPriceOracle::getRangePricesLPCall> =
-//         make_get_range_prices_lp_token_calls(some_vaults, some_pools, USDC_MAINNET);
-
-//     return calls
-// }
-
-// args autopool root price oracle
-// autopool.getDestinations()
-// autopool. base asset
-// for destination in destinations:
-// get lp token and pool into list
-// we now have a list of calls to target at the root price oracle
-// -> that gives
-
-// error[E0432]: unresolved import `risc0_steel`
-//  --> abi/src/lib.rs:2:5
-//   |
-// 2 | use risc0_steel::Commitment;
-//   |     ^^^^^^^^^^^ use of unresolved module or unlinked crate `risc0_steel`
