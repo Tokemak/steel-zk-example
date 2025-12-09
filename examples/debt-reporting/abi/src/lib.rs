@@ -1,13 +1,21 @@
-use alloy_primitives::{Address, address};
-use alloy_sol_types::{SolCall, SolType, sol};
+use alloy_sol_types::sol;
+use risc0_steel::Commitment;
 
 sol! {
-    /// This must match the signature in the guest.
     interface IRootPriceOracle {
         function getRangePricesLP(
             address lpToken,
             address pool,
             address quoteToken
-        ) external returns (uint, uint, bool);
+        ) external returns (uint, uint, bool); // spotPriceInQuote, safePriceInQuote, isSpotSafe
+    }
+}
+
+sol! {
+    struct AverageSafePriceCommitment {
+        Commitment commitment;
+        (address, uint)[] priceInfo; // lpToken, averageSafePrice
+        uint numPriorBlocks;
+        uint gapBetweenBlocks;
     }
 }

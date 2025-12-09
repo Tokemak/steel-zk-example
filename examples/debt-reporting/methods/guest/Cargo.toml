@@ -1,5 +1,5 @@
 [package]
-name = "erc20-guest"
+name = "debt-reporting-guest"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,6 +10,8 @@ alloy-primitives = { version = "1.0" }
 alloy-sol-types = { version = "1.0" }
 risc0-steel = { path = "../../../../crates/steel" }
 risc0-zkvm = { version = "3.0", default-features = false, features = ["std"] }
+debt-reporting-abi = { path = "../../abi" }
+
 
 [patch.crates-io]
 # enable RISC Zero's precompiles
