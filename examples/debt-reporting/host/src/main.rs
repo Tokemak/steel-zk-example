@@ -16,12 +16,14 @@ use alloy_sol_types::SolType;
 use anyhow::{Context, Result};
 use clap::Parser;
 use debt_reporting_abi::{
-    IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
+    AverageSafePriceCommitment, IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
 };
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
+use futures::{StreamExt, TryStreamExt};
 use risc0_steel::{
+    alloy::providers::{Provider, ProviderBuilder, RootProvider},
     ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
-    Commitment, Contract,
+    Contract,
 };
 use risc0_zkvm::{default_executor, ExecutorEnv};
 use tracing_subscriber::EnvFilter;
@@ -31,12 +33,28 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
 struct Args {
-    /// URL of the RPC endpoint
     #[arg(short, long, env = "RPC_URL")]
     rpc_url: Url,
+    #[arg(long, env = "BEACON_API_URL")]
+    beacon_api_url: Url,
 }
 
-// the host has to preflight the input data, passes the guest the needed EVM data
+fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafePriceCommitment) {
+    /*
+    After this, we should push received price data
+    (along with the proof in a transient storage)
+    to a new ZK executor contract.
+    */
+    println!("Stub for submitting a transaction to validate debt reporting");
+
+    let c = &average_safe_price_commitment;
+    println!("commitment: {:?}", c.commitment);
+
+    for (lp_token, avg_price) in &c.priceInfo {
+        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
+    }
+    println!("blocks: {:?}", c.blocks);
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,13 +64,9 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let mut env = EthEvmEnv::builder()
-        .rpc(args.rpc_url)
-        .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-        .build()
-        .await?;
-
-    let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+    let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
+    let latest = provider.get_block_number().await?;
+    let mut blocks = Vec::with_capacity(10);
 
     let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
         lpToken: A_LP_TOKEN,
@@ -60,16 +74,48 @@ async fn main() -> Result<()> {
         quoteToken: USDC_MAINNET,
     };
 
-    let _ = contract.call_builder(&call).call().await?;
-    let input = env.into_input().await?;
+    for i in 0..10 {
+        blocks.push(latest - (i * 2));
+    }
 
-    println!("Running the guest with the constructed input...");
+    let inputs: Vec<_> = futures::stream::iter(blocks.iter().cloned())
+        .map(|block_num| {
+            let provider = provider.clone();
+            let call = call.clone();
+            async move {
+                let mut env = EthEvmEnv::builder()
+                    .provider(provider)
+                    .block_number(block_num)
+                    .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
+                    .build()
+                    .await?;
+
+                let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+                // we don't care about the output here just that we feteched the data
+                // might be helpful for debugging
+                let _ = contract.call_builder(&call).call().await?;
+                let input = env.into_input().await?;
+                println!("did a block! {block_num}");
+                Ok::<_, anyhow::Error>(input)
+            }
+        })
+        .buffered(8) // at most 8 concurrent
+        .try_collect() // Vec<_>, same order as `blocks`
+        .await?;
+
+    println!("Running Debt Reporting in the guest for {blocks:?}");
+
     let session_info = {
-        let env = ExecutorEnv::builder()
-            .write(&input)
-            .unwrap()
-            .build()
-            .context("failed to build executor env")?;
+        let mut builder = ExecutorEnv::builder();
+
+        builder
+            .write(&blocks)
+            .context("failed to write blocks into executor env")?;
+        builder
+            .write(&inputs)
+            .context("failed to write inputs into executor env")?;
+
+        let env = builder.build().context("failed to build executor env")?;
 
         let exec = default_executor();
         exec.execute(env, DEBT_REPORTING_GUEST_ELF)
@@ -77,10 +123,11 @@ async fn main() -> Result<()> {
     };
 
     // The journal should be the ABI encoded commitment.
-    let commitment = Commitment::abi_decode(session_info.journal.as_ref())
-        .context("failed to decode journal")?;
+    let average_safe_price_commitment =
+        AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
+            .context("failed to decode journal")?;
 
-    println!("{commitment:?}");
+    stub_post_commitment_on_chain(average_safe_price_commitment);
 
     Ok(())
 }

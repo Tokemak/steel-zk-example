@@ -16,10 +16,15 @@ sol! {
     struct AverageSafePriceCommitment {
         Commitment commitment;
         (address, uint)[] priceInfo; // lpToken, averageSafePrice
-        uint numPriorBlocks;
-        uint gapBetweenBlocks;
+        uint[] blocks;
     }
 }
+
+// #[derive(Serialize, Deserialize)]
+// pub struct DebtReportingInputData {
+//     pub blocks: Vec<u64>,
+//     pub ethereum_envs: Vec<EthEvmInput>,
+// }
 
 // const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");
 pub const USDC_MAINNET: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
