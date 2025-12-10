@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
 
     let mut latest = provider.get_block_number().await?;
-    latest = latest - 10; 
+    latest = latest - 10;
     let mut blocks = Vec::with_capacity(3);
     for i in 0..3 {
         let offset = 1 * (9 - i);
@@ -114,7 +114,6 @@ async fn main() -> Result<()> {
     let average_safe_price_commitment =
         AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
             .context("failed to decode journal")?;
-        
 
     let c = &average_safe_price_commitment;
 
