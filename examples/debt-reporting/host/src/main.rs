@@ -16,12 +16,13 @@ use alloy_sol_types::SolType;
 use anyhow::{Context, Result};
 use clap::Parser;
 use debt_reporting_abi::{
-    IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
+    AverageSafePriceCommitment, IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
 };
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
 use risc0_steel::{
+    alloy::providers::{Provider, ProviderBuilder, RootProvider},
     ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
-    Commitment, Contract,
+    Contract, SteelVerifier,
 };
 use risc0_zkvm::{default_executor, ExecutorEnv};
 use tracing_subscriber::EnvFilter;
@@ -46,30 +47,63 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let mut env = EthEvmEnv::builder()
-        .rpc(args.rpc_url)
-        .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-        .build()
-        .await?;
+    let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
 
-    let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+    let mut latest = provider.get_block_number().await?;
+    latest = latest - 10; 
+    let mut blocks = Vec::with_capacity(3);
+    for i in 0..3 {
+        let offset = 1 * (9 - i);
+        blocks.push(latest - offset);
+    }
 
-    let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
-        lpToken: A_LP_TOKEN,
-        pool: A_LP_TOKEN,
-        quoteToken: USDC_MAINNET,
-    };
+    let mut inputs = Vec::with_capacity(blocks.len());
 
-    let _ = contract.call_builder(&call).call().await?;
-    let input = env.into_input().await?;
+    for block in blocks.iter() {
+        let builder = EthEvmEnv::builder()
+            .provider(provider.clone())
+            .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
+            .block_number(*block);
 
-    println!("Running the guest with the constructed input...");
+        let mut env = builder.build().await?;
+
+        let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+
+        let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
+            lpToken: A_LP_TOKEN,
+            pool: A_LP_TOKEN,
+            quoteToken: USDC_MAINNET,
+        };
+
+        // we don't need to care about the output of this call here
+        // just need to fetch data
+        // so that we use it in the guest
+        let _ = contract.call_builder(&call).call().await?;
+        println!("success getRangePricesLPCall {block:?} ");
+        let commitment = env.commitment();
+        println!("success commitment {block:?} ");
+        println!("raw commitment: {:?}", commitment);
+
+        SteelVerifier::preflight(&mut env)
+            .verify(&commitment)
+            .await?;
+        println!("success preflight {block:?} ");
+        let input = env.into_input().await?;
+        inputs.push(input)
+    }
+
+    println!("Running the guest with the constructed input:");
     let session_info = {
-        let env = ExecutorEnv::builder()
-            .write(&input)
-            .unwrap()
-            .build()
-            .context("failed to build executor env")?;
+        let mut builder = ExecutorEnv::builder();
+
+        builder
+            .write(&blocks)
+            .context("failed to write blocks into executor env")?;
+        builder
+            .write(&inputs)
+            .context("failed to write inputs into executor env")?;
+
+        let env = builder.build().context("failed to build executor env")?;
 
         let exec = default_executor();
         exec.execute(env, DEBT_REPORTING_GUEST_ELF)
@@ -77,10 +111,46 @@ async fn main() -> Result<()> {
     };
 
     // The journal should be the ABI encoded commitment.
-    let commitment = Commitment::abi_decode(session_info.journal.as_ref())
-        .context("failed to decode journal")?;
+    let average_safe_price_commitment =
+        AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
+            .context("failed to decode journal")?;
+        
 
-    println!("{commitment:?}");
+    let c = &average_safe_price_commitment;
+
+    println!("commitment: {:?}", c.commitment);
+
+    for (lp_token, avg_price) in &c.priceInfo {
+        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
+    }
+
+    println!("blocks: {:?}", c.blocks);
+
+    // post the commitment and answers on chain with a write
+    // eg post the (destination_vault: lp token safe price data)
 
     Ok(())
 }
+
+// and then decode it in the guest
+
+// you can write this here, you can write a struct
+
+// then as the proof
+// the proof is then debt params,
+// include assets of the right block?
+// in the guest?
+
+// let params = DebtParams {
+//     num_prior_blocks: 2,
+//     gap_between_blocks: 100,
+// };
+
+// println!("Running the guest with the constructed input:");
+// let session_info = {
+//     let mut builder = ExecutorEnv::builder();
+
+//     // 1. Write the params struct
+//     builder
+//         .write(&params)
+//         .context("failed to write DebtParams")?;

@@ -7,3 +7,5 @@ edition = "2024"
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 risc0-steel = { workspace = true }
+
+# switch names

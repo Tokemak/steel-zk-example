@@ -14,11 +14,13 @@
 #![allow(unused_doc_comments)]
 #![no_main]
 
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{U256};
 use alloy_sol_types::SolValue;
 use risc0_steel::{
-    ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
+    ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC, EthEvmEnv},
     Contract,
+    Commitment,
+    SteelVerifier,
 };
 
 use debt_reporting_abi::{AverageSafePriceCommitment, IRootPriceOracle, USDC_MAINNET, ROOT_PRICE_ORACLE, A_LP_TOKEN};
@@ -26,37 +28,66 @@ use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
-
 fn main() {
-    // note this has no network access
-    // the input data has to be preflighted from the host
-    // get those from the inputs? idk here on what, prob doesn't matter
-    let num_prior_blocks: U256 = U256::from(2);
-    let gap_between_blocks: U256 = U256::from(100);
-    let input: EthEvmInput = env::read();
 
-    // Converts the input into a `EvmEnv` for execution. It checks that the state matches the state
-    let env = input.into_env(&ETH_MAINNET_CHAIN_SPEC);
+    let blocks: Vec<u64>= env::read();
+    // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
+    let first_block: &u64 = blocks.get(0).expect("Blocks should have at least one block");
 
+    let mut ethereum_envs: Vec<EthEvmInput> = env::read();
     let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
         lpToken: A_LP_TOKEN,
         pool: A_LP_TOKEN,
         quoteToken: USDC_MAINNET,
     };
 
-    let _safe_prices: Vec<U256> = Vec::new();
+    let mut safe_prices: Vec<U256> = Vec::with_capacity(blocks.len());
+    let mut previous_execution_environment: Option<EthEvmEnv<_, Commitment>> = None;
 
-    let contract = Contract::new(ROOT_PRICE_ORACLE, &env);
-    // TODO double check this is the order
-    let (_spot_price_in_quote, safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
-        contract.call_builder(&call).call().into();
+    for (block_number, ethereum_input) in blocks.iter().zip(ethereum_envs.iter_mut()) {
+        let current_execution_environment = ethereum_input.clone().into_env(&ETH_MAINNET_CHAIN_SPEC);
+
+        if block_number != first_block {
+            SteelVerifier::new(&current_execution_environment)
+                .verify(previous_execution_environment.expect("There should be a previous env by this point").commitment());
+        } else {
+            // maybe check just this state?
+        }
+        
+        // assert_eq!( // syntax is wrong
+        //     current_execution_environment.header().number,
+        //     block_number,
+        //     "Mismatched block number between expected blocks list and EVM environment"
+        // );
+
+        let root_price_oracle_contract =
+            Contract::new(ROOT_PRICE_ORACLE, &current_execution_environment);
+
+        let (_spot_price_in_quote, safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+            root_price_oracle_contract
+                .call_builder(&call)
+                .call()
+                .into();
+
+        safe_prices.push(safe_price_in_quote);
+
+        previous_execution_environment = Some(current_execution_environment);
+    }
+
+    let sum: U256 = safe_prices.iter().copied().sum();
+    let denom = U256::from(safe_prices.len() as u64);
+    let average_safe_price: U256 = sum / denom;
+
+    let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
+
+    let last_env = previous_execution_environment.expect("There should be an environment here");
 
     let journal = AverageSafePriceCommitment {
-        commitment: env.into_commitment(),
-        priceInfo: vec![(A_LP_TOKEN, safe_price_in_quote)],
-        numPriorBlocks: num_prior_blocks,
-        gapBetweenBlocks: gap_between_blocks,
+        commitment: last_env.into_commitment(),
+        priceInfo: vec![(A_LP_TOKEN, average_safe_price)],
+        blocks: blocks,
     };
 
     env::commit_slice(&journal.abi_encode());
+
 }
