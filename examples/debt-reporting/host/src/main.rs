@@ -19,10 +19,11 @@ use debt_reporting_abi::{
     AverageSafePriceCommitment, IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
 };
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
+use futures::{StreamExt, TryStreamExt};
 use risc0_steel::{
     alloy::providers::{Provider, ProviderBuilder, RootProvider},
     ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
-    Contract, SteelVerifier,
+    Contract,
 };
 use risc0_zkvm::{default_executor, ExecutorEnv};
 use tracing_subscriber::EnvFilter;
@@ -32,12 +33,28 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
 struct Args {
-    /// URL of the RPC endpoint
     #[arg(short, long, env = "RPC_URL")]
     rpc_url: Url,
+    #[arg(long, env = "BEACON_API_URL")]
+    beacon_api_url: Url,
 }
 
-// the host has to preflight the input data, passes the guest the needed EVM data
+fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafePriceCommitment) {
+    /*
+    After this, we should push received price data
+    (along with the proof in a transient storage)
+    to a new ZK executor contract.
+    */
+    println!("Stub for submitting a transaction to validate debt reporting");
+
+    let c = &average_safe_price_commitment;
+    println!("commitment: {:?}", c.commitment);
+
+    for (lp_token, avg_price) in &c.priceInfo {
+        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
+    }
+    println!("blocks: {:?}", c.blocks);
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,51 +65,46 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
+    let latest = provider.get_block_number().await?;
+    let mut blocks = Vec::with_capacity(10);
 
-    let mut latest = provider.get_block_number().await?;
-    latest = latest - 10;
-    let mut blocks = Vec::with_capacity(3);
-    for i in 0..3 {
-        let offset = 1 * (9 - i);
-        blocks.push(latest - offset);
+    let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
+        lpToken: A_LP_TOKEN,
+        pool: A_LP_TOKEN,
+        quoteToken: USDC_MAINNET,
+    };
+
+    for i in 0..10 {
+        blocks.push(latest - (i * 2));
     }
 
-    let mut inputs = Vec::with_capacity(blocks.len());
+    let inputs: Vec<_> = futures::stream::iter(blocks.iter().cloned())
+        .map(|block_num| {
+            let provider = provider.clone();
+            let call = call.clone();
+            async move {
+                let mut env = EthEvmEnv::builder()
+                    .provider(provider)
+                    .block_number(block_num)
+                    .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
+                    .build()
+                    .await?;
 
-    for block in blocks.iter() {
-        let builder = EthEvmEnv::builder()
-            .provider(provider.clone())
-            .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-            .block_number(*block);
+                let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
+                // we don't care about the output here just that we feteched the data
+                // might be helpful for debugging
+                let _ = contract.call_builder(&call).call().await?;
+                let input = env.into_input().await?;
+                println!("did a block! {block_num}");
+                Ok::<_, anyhow::Error>(input)
+            }
+        })
+        .buffered(8) // at most 8 concurrent
+        .try_collect() // Vec<_>, same order as `blocks`
+        .await?;
 
-        let mut env = builder.build().await?;
+    println!("Running Debt Reporting in the guest for {blocks:?}");
 
-        let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
-
-        let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
-            lpToken: A_LP_TOKEN,
-            pool: A_LP_TOKEN,
-            quoteToken: USDC_MAINNET,
-        };
-
-        // we don't need to care about the output of this call here
-        // just need to fetch data
-        // so that we use it in the guest
-        let _ = contract.call_builder(&call).call().await?;
-        println!("success getRangePricesLPCall {block:?} ");
-        let commitment = env.commitment();
-        println!("success commitment {block:?} ");
-        println!("raw commitment: {:?}", commitment);
-
-        SteelVerifier::preflight(&mut env)
-            .verify(&commitment)
-            .await?;
-        println!("success preflight {block:?} ");
-        let input = env.into_input().await?;
-        inputs.push(input)
-    }
-
-    println!("Running the guest with the constructed input:");
     let session_info = {
         let mut builder = ExecutorEnv::builder();
 
@@ -115,41 +127,7 @@ async fn main() -> Result<()> {
         AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
             .context("failed to decode journal")?;
 
-    let c = &average_safe_price_commitment;
-
-    println!("commitment: {:?}", c.commitment);
-
-    for (lp_token, avg_price) in &c.priceInfo {
-        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
-    }
-
-    println!("blocks: {:?}", c.blocks);
-
-    // post the commitment and answers on chain with a write
-    // eg post the (destination_vault: lp token safe price data)
+    stub_post_commitment_on_chain(average_safe_price_commitment);
 
     Ok(())
 }
-
-// and then decode it in the guest
-
-// you can write this here, you can write a struct
-
-// then as the proof
-// the proof is then debt params,
-// include assets of the right block?
-// in the guest?
-
-// let params = DebtParams {
-//     num_prior_blocks: 2,
-//     gap_between_blocks: 100,
-// };
-
-// println!("Running the guest with the constructed input:");
-// let session_info = {
-//     let mut builder = ExecutorEnv::builder();
-
-//     // 1. Write the params struct
-//     builder
-//         .write(&params)
-//         .context("failed to write DebtParams")?;

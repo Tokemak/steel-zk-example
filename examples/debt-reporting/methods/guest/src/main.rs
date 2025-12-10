@@ -20,7 +20,6 @@ use risc0_steel::{
     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC, EthEvmEnv},
     Contract,
     Commitment,
-    SteelVerifier,
 };
 
 use debt_reporting_abi::{AverageSafePriceCommitment, IRootPriceOracle, USDC_MAINNET, ROOT_PRICE_ORACLE, A_LP_TOKEN};
@@ -32,7 +31,6 @@ fn main() {
 
     let blocks: Vec<u64>= env::read();
     // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
-    let first_block: &u64 = blocks.get(0).expect("Blocks should have at least one block");
 
     let mut ethereum_envs: Vec<EthEvmInput> = env::read();
     let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
@@ -44,22 +42,8 @@ fn main() {
     let mut safe_prices: Vec<U256> = Vec::with_capacity(blocks.len());
     let mut previous_execution_environment: Option<EthEvmEnv<_, Commitment>> = None;
 
-    for (block_number, ethereum_input) in blocks.iter().zip(ethereum_envs.iter_mut()) {
+    for (_block_number, ethereum_input) in blocks.iter().zip(ethereum_envs.iter_mut()) {
         let current_execution_environment = ethereum_input.clone().into_env(&ETH_MAINNET_CHAIN_SPEC);
-
-        if block_number != first_block {
-            SteelVerifier::new(&current_execution_environment)
-                .verify(previous_execution_environment.expect("There should be a previous env by this point").commitment());
-        } else {
-            // maybe check just this state?
-        }
-        
-        // assert_eq!( // syntax is wrong
-        //     current_execution_environment.header().number,
-        //     block_number,
-        //     "Mismatched block number between expected blocks list and EVM environment"
-        // );
-
         let root_price_oracle_contract =
             Contract::new(ROOT_PRICE_ORACLE, &current_execution_environment);
 
@@ -87,7 +71,16 @@ fn main() {
         priceInfo: vec![(A_LP_TOKEN, average_safe_price)],
         blocks: blocks,
     };
+    
 
     env::commit_slice(&journal.abi_encode());
+    /*
+
+    NOTE
+
+    Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
+    not that every single call came from that block
+    
+     */
 
 }
