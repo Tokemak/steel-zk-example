@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+
+// todo
+// pass in an autopool vault address
+// outside of the zk
+// get the destinations of that autopool
+// for each destination in autopool.getDestinations():
+//    for each block in [10 recent blocks]:
+//      _ = RootPriceOracle.getRangePriceLP(destination.lp_token, destination.pool, autopool.baseAsset)?
+
+// do the same in the guest but average all the safe prices for lp token and pool
+//
+
+
 use alloy_sol_types::SolType;
 use anyhow::{Context, Result};
 use clap::Parser;
