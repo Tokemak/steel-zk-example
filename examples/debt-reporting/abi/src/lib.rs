@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, address};
+// use alloy_primitives::{address};
 use alloy_sol_types::sol;
 use risc0_steel::Commitment;
 
