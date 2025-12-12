@@ -55,12 +55,6 @@ fn main() {
 // fn main() {
 
 //     println!("{base_asset:?} found in helper on host");
-    
-
-
-
-
-
 //     // let blocks: Vec<u64>= env::read();
 //     // // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
 

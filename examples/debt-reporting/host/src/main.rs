@@ -1,12 +1,12 @@
 mod preflight_fetch_contract_addresses;
-use preflight_fetch_contract_addresses::fetch_and_print_base_asset;
+use preflight_fetch_contract_addresses::fetch_constants_for_autopool;
 
 use alloy_primitives::{address, Address};
 use anyhow::{Context, Result};
 
 use alloy_sol_types::SolValue;
 use clap::Parser;
-use debt_reporting_abi::BaseAssetCommitment;
+use debt_reporting_abi::{AutopoolAddressConstants};
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF;
 use risc0_steel::alloy::providers::{ProviderBuilder, RootProvider};
 use risc0_zkvm::{default_executor, ExecutorEnv};
@@ -25,7 +25,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     // minimal main for imports
-    println!("Starting minimal imports example...");
+    println!("Starting debt reporting host");
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
@@ -33,24 +33,44 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
     let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
-    let input = fetch_and_print_base_asset(autopool, provider.clone(), 23999130).await?;
+    let (input, autopool_address_constants) = fetch_constants_for_autopool(autopool, provider.clone(), 23999130).await?;
 
-    println!("executing Guest!");
-    let session_info = {
-        let mut builder = ExecutorEnv::builder();
-        builder
-            .write(&input)
-            .context("Failed to write autopool baseAsset input data will be constants")?;
+    println!("Inside of main in the host!");
+    println!("autopool: {:?}", autopool_address_constants.autopool);
+    println!(
+        "systemRegistry: {:?}",
+        autopool_address_constants.systemRegistry
+    );
+    println!(
+        "rootPriceOracle: {:?}",
+        autopool_address_constants.rootPriceOracle
+    );
+    println!("baseAsset: {:?}", autopool_address_constants.baseAsset);
+    println!(
+        "destinationVaultKeys len: {}",
+        autopool_address_constants.destinationVaultKeys.len()
+    );
 
-        let env = builder.build().context("failed to build executor env")?;
-        let exec = default_executor();
-        exec.execute(env, DEBT_REPORTING_GUEST_ELF)
-            .context("failed to run executor")?
-    };
+    // // autopool_address_constants only needed for ptinging
+    // println!("executing Guest!");
+    // let session_info = {
+    //     let mut builder = ExecutorEnv::builder();
+    //     builder
+    //         .write(&input)
+    //         .context("Failed to write autopool baseAsset input data will be constants")?;
 
-    let base_asset_commitment = BaseAssetCommitment::abi_decode(&session_info.journal.bytes)
-        .context("failed to decode journal")?;
-    println!("base asset seen in commitment {:?}", base_asset_commitment.baseAsset);
+    //     let env = builder.build().context("failed to build executor env")?;
+    //     let exec = default_executor();
+    //     exec.execute(env, DEBT_REPORTING_GUEST_ELF)
+    //         .context("failed to run executor")?
+    // };
+
+    // let base_asset_commitment = BaseAssetCommitment::abi_decode(&session_info.journal.bytes)
+    //     .context("failed to decode journal")?;
+    // println!(
+    //     "base asset seen in commitment {:?}",
+    //     base_asset_commitment.baseAsset
+    // );
 
     Ok(())
 }

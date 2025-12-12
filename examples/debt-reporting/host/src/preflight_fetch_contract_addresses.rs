@@ -2,19 +2,19 @@
 
 use alloy_primitives::Address;
 use anyhow::Result;
-// use debt_reporting_abi::{
-//     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
-//     IMinimalSystemRegistry,
-// };
+use debt_reporting_abi::{
+    AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
+    IMinimalSystemRegistry,
+};
 
-use debt_reporting_abi::IMinimalAutoPool;
 use risc0_steel::{
     alloy::providers::RootProvider,
     ethereum::{EthEvmEnv, EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
 };
 
-pub async fn fetch_and_print_base_asset(
+// works
+pub async fn _fetch_and_print_base_asset(
     autopool: Address,
     provider: RootProvider,
     block: u64,
@@ -37,6 +37,96 @@ pub async fn fetch_and_print_base_asset(
     let input = env.into_input().await?;
 
     Ok(input)
+}
+
+pub async fn fetch_constants_for_autopool(
+    autopool: Address,
+    provider: RootProvider,
+    block: u64,
+) -> Result<(EthEvmInput, AutopoolAddressConstants)> {
+    let mut env = EthEvmEnv::builder()
+        .provider(provider)
+        .block_number(block)
+        .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
+        .build()
+        .await?;
+
+    let mut autopool_contract = Contract::preflight(autopool, &mut env);
+
+    let destination_vaults: Vec<Address> = autopool_contract
+        .call_builder(&IMinimalAutoPool::getDestinationsCall {})
+        .call()
+        .await?;
+
+    let base_asset: Address = autopool_contract
+        .call_builder(&IMinimalAutoPool::assetCall {})
+        .call()
+        .await?;
+
+    let system_registry: Address = autopool_contract
+        .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
+        .call()
+        .await?;
+
+    let mut system_registry_contract = Contract::preflight(system_registry, &mut env);
+
+    let root_price_oracle: Address = system_registry_contract
+        .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
+        .call()
+        .await?;
+
+    let mut destination_vault_keys: Vec<DestinationVaultKey> =
+        Vec::with_capacity(destination_vaults.len());
+
+    for dv in destination_vaults {
+        let mut destination_vault_contract = Contract::preflight(dv, &mut env);
+
+        let token: Address = destination_vault_contract
+            .call_builder(&IMinimalDestinationVault::underlyingCall {})
+            .call()
+            .await?;
+
+        let pool: Address = destination_vault_contract
+            .call_builder(&IMinimalDestinationVault::getPoolCall {})
+            .call()
+            .await?;
+
+        destination_vault_keys.push(DestinationVaultKey {
+            token: token,
+            pool: pool,
+            baseAsset: base_asset,
+            destinationVault: dv,
+        });
+    }
+
+    let autopool_address_constants: AutopoolAddressConstants = AutopoolAddressConstants {
+        autopool: autopool,
+        systemRegistry: system_registry,
+        rootPriceOracle: root_price_oracle,
+        baseAsset: base_asset,
+        destinationVaultKeys: destination_vault_keys,
+    };
+
+    // Or print specific fields (works even without Debug on the whole struct):
+    println!("Inside of helper in the host!");
+
+    println!("autopool: {:?}", autopool_address_constants.autopool);
+    println!(
+        "systemRegistry: {:?}",
+        autopool_address_constants.systemRegistry
+    );
+    println!(
+        "rootPriceOracle: {:?}",
+        autopool_address_constants.rootPriceOracle
+    );
+    println!("baseAsset: {:?}", autopool_address_constants.baseAsset);
+    println!(
+        "destinationVaultKeys len: {}",
+        autopool_address_constants.destinationVaultKeys.len()
+    );
+
+    let input = env.into_input().await?;
+    Ok((input, autopool_address_constants))
 }
 
 // // FAILS

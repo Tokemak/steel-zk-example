@@ -38,12 +38,15 @@ sol! {
 }
 
 sol! {
+
+    #![sol(all_derives)]
+    #![sol(extra_derives(serde::Serialize, serde::Deserialize))]
     // can we store this as a sha256(token, pool, baseAsset, destinationVault) instead?
     // so we are writing one slot instead of 4?
     struct DestinationVaultKey {
         address token;
         address pool;
-        address baseAsset;
+        address baseAsset; // redundent
         address destinationVault;
     }
 
