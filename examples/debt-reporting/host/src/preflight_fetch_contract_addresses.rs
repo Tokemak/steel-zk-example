@@ -10,7 +10,7 @@ use anyhow::Result;
 use debt_reporting_abi::IMinimalAutoPool;
 use risc0_steel::{
     alloy::providers::RootProvider,
-    ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
+    ethereum::{EthEvmEnv, EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
 };
 
@@ -18,7 +18,7 @@ pub async fn fetch_and_print_base_asset(
     autopool: Address,
     provider: RootProvider,
     block: u64,
-) -> Result<Address> {
+) -> Result<EthEvmInput> {
     let mut env = EthEvmEnv::builder()
         .provider(provider)
         .block_number(block)
@@ -33,8 +33,10 @@ pub async fn fetch_and_print_base_asset(
         .call()
         .await?;
 
-    println!("{base_asset:?}");
-    Ok(base_asset)
+    println!("{base_asset:?} found in helper on host");
+    let input = env.into_input().await?;
+
+    Ok(input)
 }
 
 // // FAILS

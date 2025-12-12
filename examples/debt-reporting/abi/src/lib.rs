@@ -66,6 +66,11 @@ sol! {
         Commitment commitment;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo; // lpToken, averageSafePrice
     }
+
+    struct BaseAssetCommitment {
+        Commitment commitment;
+        address baseAsset;
+    }
 }
 
 // const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");

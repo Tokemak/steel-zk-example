@@ -15,72 +15,104 @@
 #![no_main]
 
 // use alloy_primitives::{U256};
-// use alloy_sol_types::SolValue;
-// use risc0_steel::{
-//     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC, EthEvmEnv},
-//     Contract,
-//     Commitment,
-// };
+use alloy_sol_types::SolValue;
+use alloy_primitives::{Address, address};
 
-// use debt_reporting_abi::{AverageSafePriceCommitment, IRootPriceOracle, USDC_MAINNET, ROOT_PRICE_ORACLE, A_LP_TOKEN};
+use risc0_steel::{
+    ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
+    Contract,
+    // Commitment,
+};
+
+use debt_reporting_abi::{BaseAssetCommitment, IMinimalAutoPool};
 use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
+
 fn main() {
+    let constants_input: EthEvmInput = env::read();
+    let constants_env = constants_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
+    // note pass this to the guest instead
+    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
+    let autopool_contract = Contract::new(autopool, &constants_env); // constants_env is not mutable, it is the raw state and proof of state for a given block on the evm
 
-    // let blocks: Vec<u64>= env::read();
-    // // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
+    let base_asset: Address = autopool_contract
+        .call_builder(&IMinimalAutoPool::assetCall {})
+        .call();
 
-    // let mut ethereum_envs: Vec<EthEvmInput> = env::read();
-    // let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
-    //     lpToken: A_LP_TOKEN,
-    //     pool: A_LP_TOKEN,
-    //     quoteToken: USDC_MAINNET,
-    // };
+    println!("{base_asset:?} found in main logic on guest");
 
-    // let mut safe_prices: Vec<U256> = Vec::with_capacity(blocks.len());
-    // let mut previous_execution_environment: Option<EthEvmEnv<_, Commitment>> = None;
-
-    // for (_block_number, ethereum_input) in blocks.iter().zip(ethereum_envs.iter_mut()) {
-    //     let current_execution_environment = ethereum_input.clone().into_env(&ETH_MAINNET_CHAIN_SPEC);
-    //     let root_price_oracle_contract =
-    //         Contract::new(ROOT_PRICE_ORACLE, &current_execution_environment);
-
-    //     let (_spot_price_in_quote, safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
-    //         root_price_oracle_contract
-    //             .call_builder(&call)
-    //             .call()
-    //             .into();
-
-    //     safe_prices.push(safe_price_in_quote);
-
-    //     previous_execution_environment = Some(current_execution_environment);
-    // }
-
-    // let sum: U256 = safe_prices.iter().copied().sum();
-    // let denom = U256::from(safe_prices.len() as u64);
-    // let average_safe_price: U256 = sum / denom;
-
-    // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
-
-    // let last_env = previous_execution_environment.expect("There should be an environment here");
-
-    // let journal = AverageSafePriceCommitment {
-    //     commitment: last_env.into_commitment(),
-    //     priceInfo: vec![(A_LP_TOKEN, average_safe_price)],
-    //     blocks: blocks,
-    // };
-    
-
-    // env::commit_slice(&journal.abi_encode());
-    /*
-
-    NOTE
-
-    Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
-    not that every single call came from that block
-    
-     */
-
+    let journal = BaseAssetCommitment {
+        commitment: constants_env.into_commitment(),
+        baseAsset: base_asset,
+    };
+    env::commit_slice(&journal.abi_encode());
 }
+
+
+
+// fn main() {
+
+//     println!("{base_asset:?} found in helper on host");
+    
+
+
+
+
+
+//     // let blocks: Vec<u64>= env::read();
+//     // // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
+
+//     // let mut ethereum_envs: Vec<EthEvmInput> = env::read();
+//     // let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
+//     //     lpToken: A_LP_TOKEN,
+//     //     pool: A_LP_TOKEN,
+//     //     quoteToken: USDC_MAINNET,
+//     // };
+
+//     // let mut safe_prices: Vec<U256> = Vec::with_capacity(blocks.len());
+//     // let mut previous_execution_environment: Option<EthEvmEnv<_, Commitment>> = None;
+
+//     // for (_block_number, ethereum_input) in blocks.iter().zip(ethereum_envs.iter_mut()) {
+//     //     let current_execution_environment = ethereum_input.clone().into_env(&ETH_MAINNET_CHAIN_SPEC);
+//     //     let root_price_oracle_contract =
+//     //         Contract::new(ROOT_PRICE_ORACLE, &current_execution_environment);
+
+//     //     let (_spot_price_in_quote, safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+//     //         root_price_oracle_contract
+//     //             .call_builder(&call)
+//     //             .call()
+//     //             .into();
+
+//     //     safe_prices.push(safe_price_in_quote);
+
+//     //     previous_execution_environment = Some(current_execution_environment);
+//     // }
+
+//     // let sum: U256 = safe_prices.iter().copied().sum();
+//     // let denom = U256::from(safe_prices.len() as u64);
+//     // let average_safe_price: U256 = sum / denom;
+
+//     // let blocks: Vec<U256> = blocks.into_iter().map(U256::from).collect();
+
+//     // let last_env = previous_execution_environment.expect("There should be an environment here");
+
+//     // let journal = AverageSafePriceCommitment {
+//     //     commitment: last_env.into_commitment(),
+//     //     priceInfo: vec![(A_LP_TOKEN, average_safe_price)],
+//     //     blocks: blocks,
+//     // };
+    
+
+//     // env::commit_slice(&journal.abi_encode());
+//     /*
+
+//     NOTE
+
+//     Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
+//     not that every single call came from that block
+    
+//      */
+
+// }
