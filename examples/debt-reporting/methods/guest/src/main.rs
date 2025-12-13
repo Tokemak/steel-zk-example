@@ -15,42 +15,95 @@
 #![no_main]
 
 // use alloy_primitives::{U256};
+// use alloy_sol_types::SolValue;
+use alloy_primitives::{Address};
 use alloy_sol_types::SolValue;
-use alloy_primitives::{Address, address};
 
 use risc0_steel::{
     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
     // Commitment,
 };
-
-use debt_reporting_abi::{BaseAssetCommitment, IMinimalAutoPool};
+use debt_reporting_abi::{
+    AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
+    IMinimalSystemRegistry, AutopoolAddressConstantsCommitment
+};
 use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
 
 fn main() {
-    let constants_input: EthEvmInput = env::read();
-    let constants_env = constants_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
-    // note pass this to the guest instead
-    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
-    let autopool_contract = Contract::new(autopool, &constants_env); // constants_env is not mutable, it is the raw state and proof of state for a given block on the evm
 
-    let base_asset: Address = autopool_contract
-        .call_builder(&IMinimalAutoPool::assetCall {})
-        .call();
+    let autopool: Address = env::read();
+    let several_inputs: Vec<EthEvmInput> = env::read();
 
-    println!("{base_asset:?} found in main logic on guest");
+    let input: EthEvmInput = several_inputs.into_iter().next().unwrap();
+    let env = input.into_env(&ETH_MAINNET_CHAIN_SPEC);
+    
+    // I would put this into a seperate function if I could, 
+    // but there are issues with telling the complier what env type is so this will have to work for now
+    let autopool_address_constants = {    
+        let autopool_contract = Contract::new(autopool, &env);
+        
+        let destination_vaults: Vec<Address> = autopool_contract
+            .call_builder(&IMinimalAutoPool::getDestinationsCall {})
+            .call();
+        let base_asset: Address = autopool_contract
+            .call_builder(&IMinimalAutoPool::assetCall {})
+            .call();
+        let system_registry: Address = autopool_contract
+            .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
+            .call();
 
-    let journal = BaseAssetCommitment {
-        commitment: constants_env.into_commitment(),
-        baseAsset: base_asset,
+        let system_registry_contract = Contract::new(system_registry, &env);
+        let root_price_oracle: Address = system_registry_contract
+            .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
+            .call();
+
+        let mut destination_vault_keys: Vec<DestinationVaultKey> =
+            Vec::with_capacity(destination_vaults.len());
+
+        for dv in destination_vaults {
+            let destination_vault_contract = Contract::new(dv, &env);
+
+            let token: Address = destination_vault_contract
+                .call_builder(&IMinimalDestinationVault::underlyingCall {})
+                .call();
+
+            let pool: Address = destination_vault_contract
+                .call_builder(&IMinimalDestinationVault::getPoolCall {})
+                .call();
+
+            destination_vault_keys.push(DestinationVaultKey {
+                token: token,
+                pool: pool,
+                baseAsset: base_asset,
+                destinationVault: dv,
+            });
+        }
+        AutopoolAddressConstants {
+            autopool: autopool,
+            systemRegistry: system_registry,
+            rootPriceOracle: root_price_oracle,
+            baseAsset: base_asset,
+            destinationVaultKeys: destination_vault_keys,
+        }
+
+
+
+
+
+
     };
+
+    let journal = AutopoolAddressConstantsCommitment {
+        commitment: env.into_commitment(),
+        autopool_address_constants: autopool_address_constants,
+    };
+
     env::commit_slice(&journal.abi_encode());
 }
-
-
 
 // fn main() {
 

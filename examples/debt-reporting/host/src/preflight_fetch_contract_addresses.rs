@@ -1,10 +1,10 @@
 // host/src/preflight_fetch_contract_addresses.rs
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use anyhow::Result;
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
-    IMinimalSystemRegistry,
+    IMinimalRootPriceOracle, IMinimalSystemRegistry,
 };
 
 use risc0_steel::{
@@ -12,32 +12,6 @@ use risc0_steel::{
     ethereum::{EthEvmEnv, EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
 };
-
-// works
-pub async fn _fetch_and_print_base_asset(
-    autopool: Address,
-    provider: RootProvider,
-    block: u64,
-) -> Result<EthEvmInput> {
-    let mut env = EthEvmEnv::builder()
-        .provider(provider)
-        .block_number(block)
-        .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-        .build()
-        .await?;
-
-    let mut autopool_contract = Contract::preflight(autopool, &mut env);
-
-    let base_asset: Address = autopool_contract
-        .call_builder(&IMinimalAutoPool::assetCall {})
-        .call()
-        .await?;
-
-    println!("{base_asset:?} found in helper on host");
-    let input = env.into_input().await?;
-
-    Ok(input)
-}
 
 pub async fn fetch_constants_for_autopool(
     autopool: Address,
@@ -79,17 +53,44 @@ pub async fn fetch_constants_for_autopool(
         Vec::with_capacity(destination_vaults.len());
 
     for dv in destination_vaults {
-        let mut destination_vault_contract = Contract::preflight(dv, &mut env);
+        // weird things with mutable borrows
+        let (token, pool) = {
+            let mut destination_vault_contract = Contract::preflight(dv, &mut env);
 
-        let token: Address = destination_vault_contract
-            .call_builder(&IMinimalDestinationVault::underlyingCall {})
-            .call()
-            .await?;
+            let token: Address = destination_vault_contract
+                .call_builder(&IMinimalDestinationVault::underlyingCall {})
+                .call()
+                .await?;
 
-        let pool: Address = destination_vault_contract
-            .call_builder(&IMinimalDestinationVault::getPoolCall {})
-            .call()
-            .await?;
+            let pool: Address = destination_vault_contract
+                .call_builder(&IMinimalDestinationVault::getPoolCall {})
+                .call()
+                .await?;
+
+            (token, pool)
+        };
+
+        // does not return anything
+        {
+            let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
+                IMinimalRootPriceOracle::getRangePricesLPCall {
+                    lpToken: token,
+                    pool: pool,
+                    quoteToken: base_asset,
+                };
+
+            let mut root_price_oracle_contract = Contract::preflight(root_price_oracle, &mut env);
+
+            // get it working then make it not redundent
+            // make the call but we don't use it here
+            // just so that we can use this later
+            let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+                root_price_oracle_contract
+                    .call_builder(&get_range_prices_lp_call)
+                    .call()
+                    .await?
+                    .into();
+        };
 
         destination_vault_keys.push(DestinationVaultKey {
             token: token,
@@ -99,7 +100,7 @@ pub async fn fetch_constants_for_autopool(
         });
     }
 
-    let autopool_address_constants: AutopoolAddressConstants = AutopoolAddressConstants {
+    let autopool_address_constants = AutopoolAddressConstants {
         autopool: autopool,
         systemRegistry: system_registry,
         rootPriceOracle: root_price_oracle,
@@ -128,95 +129,3 @@ pub async fn fetch_constants_for_autopool(
     let input = env.into_input().await?;
     Ok((input, autopool_address_constants))
 }
-
-// // FAILS
-// pub async fn fetch_and_print_base_asset<N, P, C>(
-//     autopool: Address,
-//     env: &mut EthEvmEnv<ProofDb<ProviderDb<N, P>>, HostCommit<C>>,
-// ) -> Result<Address> {
-//     let mut autopool_contract = Contract::preflight(autopool, env);
-
-//     let base_asset: Address = autopool_contract
-//         .call_builder(&IMinimalAutoPool::assetCall {})
-//         .call()
-//         .await?;
-
-//     println!("{base_asset:?}");
-//     Ok(base_asset)
-// }
-
-// ///  have it return the input
-// /// todo put this into it's own function
-// // /// broken because of imports
-// // /// Fetch all the "constant" addresses associated with an Autopool.
-// // ///
-// // /// Generic over the INTERNAL type params of the host env, but the env
-// // /// itself is always a HostEvmEnv<_, _, _>.
-// // pub async fn fetch_constants_for_autopool<D, F, C>(
-// //     autopool: Address,
-// //     env: &mut HostEvmEnv<D, F, C>,
-// // ) -> Result<AutopoolAddressConstants> {
-// //     let mut autopool_contract = Contract::preflight(autopool, env);
-
-//     let base_asset: Address = autopool_contract
-//         .call_builder(&IMinimalAutoPool::assetCall {})
-//         .call()
-//         .await?;
-
-//     let system_registry: Address = autopool_contract
-//         .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
-//         .call()
-//         .await?;
-
-//     let destination_vaults: Vec<Address> = autopool_contract
-//         .call_builder(&IMinimalAutoPool::getDestinationsCall {})
-//         .call()
-//         .await?;
-
-//     let mut system_registry_contract = Contract::preflight(system_registry, env);
-//     let root_price_oracle: Address = system_registry_contract
-//         .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
-//         .call()
-//         .await?;
-
-//     let mut destination_vault_keys: Vec<DestinationVaultKey> =
-//         Vec::with_capacity(destination_vaults.len());
-
-//     for dv in destination_vaults {
-//         let key = fetch_constants_for_destination_vault(dv, base_asset, env).await?;
-//         destination_vault_keys.push(key);
-//     }
-
-//     Ok(AutopoolAddressConstants {
-//         autopool,
-//         systemRegistry: system_registry,
-//         rootPriceOracle: root_price_oracle,
-//         baseAsset: base_asset,
-//         destinationVaultKeys: destination_vault_keys,
-//     })
-// }
-
-// async fn fetch_constants_for_destination_vault<D, F, C>(
-//     destination_vault: Address,
-//     base_asset: Address,
-//     env: &mut HostEvmEnv<D, F, C>,
-// ) -> Result<DestinationVaultKey> {
-//     let mut destination_vault_contract = Contract::preflight(destination_vault, env);
-
-//     let token: Address = destination_vault_contract
-//         .call_builder(&IMinimalDestinationVault::underlyingCall {})
-//         .call()
-//         .await?;
-
-//     let pool: Address = destination_vault_contract
-//         .call_builder(&IMinimalDestinationVault::getPoolCall {})
-//         .call()
-//         .await?;
-
-//     Ok(DestinationVaultKey {
-//         token,
-//         pool,
-//         baseAsset: base_asset,
-//         destinationVault: destination_vault,
-//     })
-// }

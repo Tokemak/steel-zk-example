@@ -38,7 +38,6 @@ sol! {
 }
 
 sol! {
-
     #![sol(all_derives)]
     #![sol(extra_derives(serde::Serialize, serde::Deserialize))]
     // can we store this as a sha256(token, pool, baseAsset, destinationVault) instead?
@@ -64,6 +63,10 @@ sol! {
         DestinationVaultKey[] destinationVaultKeys;
     }
 
+    struct AutopoolAddressConstantsCommitment {
+        Commitment commitment;
+        AutopoolAddressConstants autopool_address_constants;
+    }
 
     struct AverageSafePriceCommitment {
         Commitment commitment;
