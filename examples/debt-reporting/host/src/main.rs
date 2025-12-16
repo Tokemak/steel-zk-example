@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         let just_prices_input =
             preflight_prices_calls(&autopool_constants, provider.clone(), block).await?;
         inputs_as_vector.push(just_prices_input);
-        println!("Finished Prices Preflight!");
+        println!("Finished Prices Preflight! {block:?}");
     }
 
     println!("Starting Guest!");
@@ -77,91 +77,11 @@ async fn main() -> Result<()> {
             .context("failed to run executor")?
     };
 
-    let a = AutopoolAddressConstantsCommitment::abi_decode(&session_info.journal.bytes)
+    let average_safe_price_commitment =
+    AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
         .context("failed to decode journal")?;
 
-    helper_print_autopool_constants(a.autopoolConstants);
-
+    stub_post_commitment_on_chain(average_safe_price_commitment);
+    
     Ok(())
 }
-
-fn helper_print_autopool_constants(a: AutopoolAddressConstants) {
-    println!("autopool: {:?}", a.autopool);
-    println!("systemRegistry: {:?}", a.systemRegistry);
-    println!("rootPriceOracle: {:?}", a.rootPriceOracle);
-    println!("baseAsset: {:?}", a.baseAsset);
-    println!("destinationVaultKeys len: {}", a.destinationVaultKeys.len());
-}
-
-// #[tokio::main]
-// async fn main() -> Result<()> {
-//     println!("Starting Debt Reporting example...");
-//     tracing_subscriber::fmt()
-//         .with_env_filter(EnvFilter::from_default_env())
-//         .init();
-
-//     let args = Args::parse();
-//     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
-
-//     let latest = provider.get_block_number().await?;
-//     let mut blocks = Vec::with_capacity(3);
-//     for i in 0..3 {
-//         blocks.push(latest - (i * 2));
-//     }
-
-//     // IMPORTANT: store them as HostEvmEnv
-//     let mut envs: Vec<EthEvmEnv<_, _>> = Vec::with_capacity(blocks.len());
-
-//     for block in &blocks {
-//         let provider = provider.clone();
-//         let env = EthEvmEnv::builder()
-//             .provider(provider)
-//             .block_number(*block)
-//             .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-//             .build()
-//             .await?;
-//         envs.push(env);
-//     }
-
-//     // We want the newest env (associated with the largest block)
-//     let most_recent_env = envs
-//         .iter_mut()
-//         .max_by_key(|env| {
-//             // TODO: pick whatever way Steel exposes the block number, e.g. env.block_number()
-//             // For now stub 0 to satisfy the type. Replace with real accessor.
-//             0u64
-//         })
-//         .expect("at least one env");
-
-//     let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
-
-//     let autopool_address_constants: AutopoolAddressConstants =
-//         fetch_constants_for_autopool(autopool, most_recent_env).await?;
-
-//     // Now you can reuse the SAME envs to preflight getRangePricesLP
-//     preflight_getRangePricesLP::preflight_get_range_prices_lp(
-//         autopool_address_constants.baseAsset,
-//         autopool_address_constants.rootPriceOracle,
-//         &autopool_address_constants.destinationVaultKeys,
-//         &mut envs,
-//     )
-//     .await?;
-
-//     println!("Address preflight Success!!!");
-//     Ok(())
-// }
-// println!("Inside of main in the host!");
-// println!("autopool: {:?}", autopool_address_constants.autopool);
-// println!(
-//     "systemRegistry: {:?}",
-//     autopool_address_constants.systemRegistry
-// );
-// println!(
-//     "rootPriceOracle: {:?}",
-//     autopool_address_constants.rootPriceOracle
-// );
-// println!("baseAsset: {:?}", autopool_address_constants.baseAsset);
-// println!(
-//     "destinationVaultKeys len: {}",
-//     autopool_address_constants.destinationVaultKeys.len()
-// );

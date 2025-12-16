@@ -6,7 +6,7 @@ use debt_reporting_abi::{
 pub fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafePriceCommitment) {
     /*
     After this, we should push received price data
-    (along with the proof in a transient storage), not certain what transient storage means here
+    (along with the proof in a transient storage), ((not certain what transient storage means here))
     to a new ZK executor contract.
     */
     println!("Stub for submitting a transaction to validate debt reporting");

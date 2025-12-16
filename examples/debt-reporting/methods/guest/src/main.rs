@@ -26,24 +26,47 @@ use risc0_steel::{
 };
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
-    IMinimalSystemRegistry, AutopoolAddressConstantsCommitment, IMinimalRootPriceOracle
+    IMinimalSystemRegistry,  IMinimalRootPriceOracle, AutopoolAddressConstantsCommitment
 };
-use risc0_zkvm::guest::env;
+use risc0_zkvm::guest::env; // DestinationsZKPricesCommitment
 
 risc0_zkvm::guest::entry!(main);
+
+// todo offcahin is spot price safe check
+
+/*
+
+NOTE
+
+Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
+not that every single call came from that block. wait for the latest version of steel to become the stable release
+before using in production, other wise there are no garentuees that the prior blocks are the blocks before the top block 
+on mainnet.
+
+they are just valid blocks, of some other EVM, at some other point point
+
+it seems the host part of the progarm is the expensive part
+
+
+*/
+
+
 
 
 fn main() {
 
     let autopool: Address = env::read();
     let several_inputs: Vec<EthEvmInput> = env::read();
+    let _num_blocks_sampled = several_inputs.len();
 
     let mut iter = several_inputs.into_iter();
     let first_input: EthEvmInput = iter.next().expect("need at least one EthEvmInput");
     let env = first_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
 
+    let mut latest_safe_price_tuples: Vec<(DestinationVaultKey, U256)> =  Vec::new(); // size does not matter
+    // we do a groupby avg later this is just a list of tuples of (DestinationVaultKey, U256) of spot price of the destination vault
+    let mut all_spot_prices_instances: Vec<(DestinationVaultKey, U256)> =  Vec::new();
 
-    let mut latest_spot_price_tuples: Vec<(DestinationVaultKey, U256)> =  Vec::new(); // size does not matter
     // I would put this into a seperate function if I could, 
     // but there are issues with telling the complier what env type is so this will have to work for now 
     let autopool_constants = {    
@@ -60,6 +83,7 @@ fn main() {
             .call();
 
         let system_registry_contract = Contract::new(system_registry, &env);
+
         let root_price_oracle: Address = system_registry_contract
             .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
             .call();
@@ -97,14 +121,17 @@ fn main() {
 
             let root_price_oracle_contract = Contract::new(root_price_oracle, &env);
 
-            let (spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+            let (spot_price_in_quote, safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
                 root_price_oracle_contract
                     .call_builder(&get_range_prices_lp_call)
                     .call()
                     .into();
-            
+                
 
-            latest_spot_price_tuples.push((key, spot_price_in_quote));
+
+            latest_safe_price_tuples.push((key.clone(), safe_price_in_quote));
+            all_spot_prices_instances.push((key.clone(), spot_price_in_quote));
+
         }
 
         AutopoolAddressConstants {
@@ -117,7 +144,51 @@ fn main() {
 
 
     };
-    // at this point we have a spot price,
+    
+    for prior_block_input in iter {
+
+        let prior_block_env = prior_block_input.into_env(&ETH_MAINNET_CHAIN_SPEC); // need to connect the envs here
+        for key in &autopool_constants.destinationVaultKeys {
+            // let key = DestinationVaultKey {
+            //     // token: token,
+            //     // pool: pool,
+            //     // baseAsset: base_asset,
+            //     destinationVault: dv,
+            // };
+
+            let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
+                IMinimalRootPriceOracle::getRangePricesLPCall {
+                    lpToken: key.token,
+                    pool: key.pool,
+                    quoteToken: key.baseAsset,
+                };
+
+            let root_price_oracle_contract = Contract::new(autopool_constants.rootPriceOracle.clone(), &prior_block_env);
+
+            let (spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+                root_price_oracle_contract
+                    .call_builder(&get_range_prices_lp_call)
+                    .call()
+                    .into();
+                
+            all_spot_prices_instances.push((key.clone(), spot_price_in_quote));
+        }
+
+    }
+            
+
+
+    // latest_safe_price_tuples.push((key, safe_price_in_quote));
+    // all_spot_prices_instances.push((key, spot_price_in_quote));
+
+    
+   
+    // let journal = DestinationsZKPricesCommitment {
+    //     commitment: env.into_commitment(),
+    //     autopoolConstants: autopool_constants,
+    //     priceInfo: // (DestinationVaultKey, ComputedGetRangePriceLP)[]
+    //     // missing commit ment here of destiatnion 
+    // };
 
     let journal = AutopoolAddressConstantsCommitment {
         commitment: env.into_commitment(),
@@ -175,13 +246,5 @@ fn main() {
     
 
 //     // env::commit_slice(&journal.abi_encode());
-//     /*
-
-//     NOTE
-
-//     Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
-//     not that every single call came from that block
-    
-//      */
 
 // }

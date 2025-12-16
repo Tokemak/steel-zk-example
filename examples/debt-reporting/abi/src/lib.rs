@@ -68,8 +68,9 @@ sol! {
         AutopoolAddressConstants autopoolConstants;
     }
 
-    struct AverageSafePriceCommitment {
+    struct DestinationsZKPricesCommitment {
         Commitment commitment;
+        AutopoolAddressConstants autopoolConstants;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo; // lpToken, averageSafePrice
     }
 }

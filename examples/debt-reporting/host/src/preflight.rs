@@ -1,7 +1,11 @@
 // host/src/preflight_fetch_contract_addresses.rs
 
-use alloy_primitives::{Address, U256};
+
 use anyhow::Result;
+use std::sync::Arc;
+use tokio::{sync::Semaphore, task::JoinSet};
+
+use alloy_primitives::{Address, U256};
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
     IMinimalRootPriceOracle, IMinimalSystemRegistry,
@@ -52,6 +56,7 @@ pub async fn preflight_prices_calls(
     Ok(input)
 }
 
+// just use for the latest block
 pub async fn preflight_autopool_constants_and_prices(
     autopool: Address,
     provider: RootProvider,
@@ -92,7 +97,7 @@ pub async fn preflight_autopool_constants_and_prices(
         Vec::with_capacity(destination_vaults.len());
 
     for dv in destination_vaults {
-        // weird things with mutable borrows
+        // weird things with mutable borrows so we have to make it be in nested scopes like this
         let (token, pool) = {
             let mut destination_vault_contract = Contract::preflight(dv, &mut env);
 
