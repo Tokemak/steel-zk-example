@@ -31,7 +31,7 @@ sol! {
         /// LP token for this destination vault. Often the same as the pool
         function underlying() external view returns (address underlying);
     }
-
+// TODO clean up these interfaces
     interface IMinimalSystemRegistry {
         function rootPriceOracle() external view returns (address rootPriceOracle_);
     }
@@ -65,19 +65,19 @@ sol! {
 
     struct AutopoolAddressConstantsCommitment {
         Commitment commitment;
-        AutopoolAddressConstants autopool_address_constants;
+        AutopoolAddressConstants autopoolConstants;
     }
 
     struct AverageSafePriceCommitment {
         Commitment commitment;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo; // lpToken, averageSafePrice
     }
-
-    struct BaseAssetCommitment {
-        Commitment commitment;
-        address baseAsset;
-    }
 }
+
+// might not be used
+// pub fn keccak256_destination_vault_key(dvk: &DestinationVaultKey) -> B256 {
+//     keccak256(dvk.abi_encode())
+// }
 
 // const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");
 // pub const USDC_MAINNET: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");

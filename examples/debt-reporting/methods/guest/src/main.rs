@@ -16,7 +16,7 @@
 
 // use alloy_primitives::{U256};
 // use alloy_sol_types::SolValue;
-use alloy_primitives::{Address};
+use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolValue;
 
 use risc0_steel::{
@@ -26,7 +26,7 @@ use risc0_steel::{
 };
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
-    IMinimalSystemRegistry, AutopoolAddressConstantsCommitment
+    IMinimalSystemRegistry, AutopoolAddressConstantsCommitment, IMinimalRootPriceOracle
 };
 use risc0_zkvm::guest::env;
 
@@ -38,12 +38,15 @@ fn main() {
     let autopool: Address = env::read();
     let several_inputs: Vec<EthEvmInput> = env::read();
 
-    let input: EthEvmInput = several_inputs.into_iter().next().unwrap();
-    let env = input.into_env(&ETH_MAINNET_CHAIN_SPEC);
-    
+    let mut iter = several_inputs.into_iter();
+    let first_input: EthEvmInput = iter.next().expect("need at least one EthEvmInput");
+    let env = first_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
+
+
+    let mut latest_spot_price_tuples: Vec<(DestinationVaultKey, U256)> =  Vec::new(); // size does not matter
     // I would put this into a seperate function if I could, 
-    // but there are issues with telling the complier what env type is so this will have to work for now
-    let autopool_address_constants = {    
+    // but there are issues with telling the complier what env type is so this will have to work for now 
+    let autopool_constants = {    
         let autopool_contract = Contract::new(autopool, &env);
         
         let destination_vaults: Vec<Address> = autopool_contract
@@ -75,13 +78,35 @@ fn main() {
                 .call_builder(&IMinimalDestinationVault::getPoolCall {})
                 .call();
 
-            destination_vault_keys.push(DestinationVaultKey {
+            let key = DestinationVaultKey {
                 token: token,
                 pool: pool,
                 baseAsset: base_asset,
                 destinationVault: dv,
-            });
+            };
+
+            destination_vault_keys.push(key.clone());
+            
+            // add the latest spot price tuple
+            let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
+                IMinimalRootPriceOracle::getRangePricesLPCall {
+                    lpToken: key.token,
+                    pool: key.pool,
+                    quoteToken: key.baseAsset,
+                };
+
+            let root_price_oracle_contract = Contract::new(root_price_oracle, &env);
+
+            let (spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+                root_price_oracle_contract
+                    .call_builder(&get_range_prices_lp_call)
+                    .call()
+                    .into();
+            
+
+            latest_spot_price_tuples.push((key, spot_price_in_quote));
         }
+
         AutopoolAddressConstants {
             autopool: autopool,
             systemRegistry: system_registry,
@@ -91,15 +116,12 @@ fn main() {
         }
 
 
-
-
-
-
     };
+    // at this point we have a spot price,
 
     let journal = AutopoolAddressConstantsCommitment {
         commitment: env.into_commitment(),
-        autopool_address_constants: autopool_address_constants,
+        autopoolConstants: autopool_constants,
     };
 
     env::commit_slice(&journal.abi_encode());

@@ -1,5 +1,5 @@
-mod preflight_fetch_contract_addresses;
-use preflight_fetch_contract_addresses::fetch_constants_for_autopool;
+mod preflight;
+use preflight::{preflight_autopool_constants_and_prices, preflight_prices_calls};
 
 use alloy_primitives::{address, Address};
 use anyhow::{Context, Result};
@@ -8,8 +8,11 @@ use alloy_sol_types::SolValue;
 use clap::Parser;
 use debt_reporting_abi::{AutopoolAddressConstants, AutopoolAddressConstantsCommitment};
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF;
+use risc0_steel::alloy::providers::Provider;
 use risc0_steel::alloy::providers::{ProviderBuilder, RootProvider};
+use risc0_steel::ethereum::EthEvmInput;
 use risc0_zkvm::{default_executor, ExecutorEnv};
+
 use tracing_subscriber::EnvFilter;
 use url::Url; // not sure what this is and what it is used for
 
@@ -33,17 +36,30 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
     let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
+    let latest = provider.get_block_number().await?;
 
-    // for loop over blocks slow, use threads
-    println!("Starting Preflight");
-    let (input, _autopool_address_constants) =
-        fetch_constants_for_autopool(autopool, provider.clone(), 23999130).await?;
-    println!("Finished preflight!");
+    println!("Starting Address Preflight");
+    let (latest_input, autopool_constants) =
+        preflight_autopool_constants_and_prices(autopool, provider.clone(), latest).await?;
+    println!("Finished Address Preflight!");
+
+    let mut inputs_as_vector: Vec<EthEvmInput> = Vec::with_capacity(3);
+
+    inputs_as_vector.push(latest_input);
+
+    let historical_blocks = vec![latest - 2, latest - 1];
+
+    // maybe overflow errors
+    for block in historical_blocks {
+        println!("Starting Prices Preflight!");
+        let just_prices_input =
+            preflight_prices_calls(&autopool_constants, provider.clone(), block).await?;
+        inputs_as_vector.push(just_prices_input);
+        println!("Finished Prices Preflight!");
+    }
 
     println!("Starting Guest!");
     let session_info = {
-        let input_as_vector = vec![input];
-
         let mut builder = ExecutorEnv::builder();
 
         builder
@@ -51,7 +67,7 @@ async fn main() -> Result<()> {
             .context("Failed to write autopool Address")?;
 
         builder
-            .write(&input_as_vector)
+            .write(&inputs_as_vector)
             .context("Failed to write input envs")?;
 
         let env = builder.build().context("failed to build executor env")?;
@@ -64,7 +80,7 @@ async fn main() -> Result<()> {
     let a = AutopoolAddressConstantsCommitment::abi_decode(&session_info.journal.bytes)
         .context("failed to decode journal")?;
 
-    helper_print_autopool_constants(a.autopool_address_constants);
+    helper_print_autopool_constants(a.autopoolConstants);
 
     Ok(())
 }

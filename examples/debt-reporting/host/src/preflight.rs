@@ -13,7 +13,46 @@ use risc0_steel::{
     Contract,
 };
 
-pub async fn fetch_constants_for_autopool(
+// TODO all the loops should be done in threads, order does not matter
+// very slow other wise
+
+pub async fn preflight_prices_calls(
+    autopool_constants: &AutopoolAddressConstants,
+    provider: RootProvider,
+    block: u64,
+) -> Result<EthEvmInput> {
+    let mut env = EthEvmEnv::builder()
+        .provider(provider)
+        .block_number(block)
+        .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
+        .build()
+        .await?;
+
+    for key in &autopool_constants.destinationVaultKeys {
+        {
+            let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
+                IMinimalRootPriceOracle::getRangePricesLPCall {
+                    lpToken: key.token,
+                    pool: key.pool,
+                    quoteToken: key.baseAsset,
+                };
+
+            let mut root_price_oracle_contract =
+                Contract::preflight(autopool_constants.rootPriceOracle, &mut env);
+
+            let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
+                root_price_oracle_contract
+                    .call_builder(&get_range_prices_lp_call)
+                    .call()
+                    .await?
+                    .into();
+        };
+    }
+    let input = env.into_input().await?;
+    Ok(input)
+}
+
+pub async fn preflight_autopool_constants_and_prices(
     autopool: Address,
     provider: RootProvider,
     block: u64,
@@ -70,7 +109,6 @@ pub async fn fetch_constants_for_autopool(
             (token, pool)
         };
 
-        // does not return anything
         {
             let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
                 IMinimalRootPriceOracle::getRangePricesLPCall {
