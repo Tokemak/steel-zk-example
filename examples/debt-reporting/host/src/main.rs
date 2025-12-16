@@ -1,35 +1,21 @@
-// Copyright 2025 RISC Zero, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+mod preflight;
+use preflight::{preflight_autopool_constants_and_prices, preflight_prices_calls};
 
-use alloy_sol_types::SolType;
+use alloy_primitives::{address, Address};
 use anyhow::{Context, Result};
-use clap::Parser;
-use debt_reporting_abi::{
-    AverageSafePriceCommitment, IRootPriceOracle, A_LP_TOKEN, ROOT_PRICE_ORACLE, USDC_MAINNET,
-};
-use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF; // not sure what this is and what it is used for
-use futures::{StreamExt, TryStreamExt};
-use risc0_steel::{
-    alloy::providers::{Provider, ProviderBuilder, RootProvider},
-    ethereum::{EthEvmEnv, ETH_MAINNET_CHAIN_SPEC},
-    Contract,
-};
-use risc0_zkvm::{default_executor, ExecutorEnv};
-use tracing_subscriber::EnvFilter;
-use url::Url;
 
-/// Simple program to show the use of Ethereum contract data inside the guest.
+use alloy_sol_types::SolValue;
+use clap::Parser;
+use debt_reporting_abi::{AutopoolAddressConstants, AutopoolAddressConstantsCommitment};
+use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF;
+use risc0_steel::alloy::providers::Provider;
+use risc0_steel::alloy::providers::{ProviderBuilder, RootProvider};
+use risc0_steel::ethereum::EthEvmInput;
+use risc0_zkvm::{default_executor, ExecutorEnv};
+
+use tracing_subscriber::EnvFilter;
+use url::Url; // not sure what this is and what it is used for
+
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
 struct Args {
@@ -39,81 +25,50 @@ struct Args {
     beacon_api_url: Url,
 }
 
-fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafePriceCommitment) {
-    /*
-    After this, we should push received price data
-    (along with the proof in a transient storage)
-    to a new ZK executor contract.
-    */
-    println!("Stub for submitting a transaction to validate debt reporting");
-
-    let c = &average_safe_price_commitment;
-    println!("commitment: {:?}", c.commitment);
-
-    for (lp_token, avg_price) in &c.priceInfo {
-        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
-    }
-    println!("blocks: {:?}", c.blocks);
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Starting Debt Reporting example...");
+    // minimal main for imports
+    println!("Starting debt reporting host");
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
+    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
     let latest = provider.get_block_number().await?;
-    let mut blocks = Vec::with_capacity(10);
 
-    let call: IRootPriceOracle::getRangePricesLPCall = IRootPriceOracle::getRangePricesLPCall {
-        lpToken: A_LP_TOKEN,
-        pool: A_LP_TOKEN,
-        quoteToken: USDC_MAINNET,
-    };
+    println!("Starting Address Preflight");
+    let (latest_input, autopool_constants) =
+        preflight_autopool_constants_and_prices(autopool, provider.clone(), latest).await?;
+    println!("Finished Address Preflight!");
 
-    for i in 0..10 {
-        blocks.push(latest - (i * 2));
+    let mut inputs_as_vector: Vec<EthEvmInput> = Vec::with_capacity(3);
+
+    inputs_as_vector.push(latest_input);
+
+    let historical_blocks = vec![latest - 2, latest - 1];
+
+    // maybe overflow errors
+    for block in historical_blocks {
+        println!("Starting Prices Preflight!");
+        let just_prices_input =
+            preflight_prices_calls(&autopool_constants, provider.clone(), block).await?;
+        inputs_as_vector.push(just_prices_input);
+        println!("Finished Prices Preflight! {block:?}");
     }
 
-    let inputs: Vec<_> = futures::stream::iter(blocks.iter().cloned())
-        .map(|block_num| {
-            let provider = provider.clone();
-            let call = call.clone();
-            async move {
-                let mut env = EthEvmEnv::builder()
-                    .provider(provider)
-                    .block_number(block_num)
-                    .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-                    .build()
-                    .await?;
-
-                let mut contract = Contract::preflight(ROOT_PRICE_ORACLE, &mut env);
-                // we don't care about the output here just that we feteched the data
-                // might be helpful for debugging
-                let _ = contract.call_builder(&call).call().await?;
-                let input = env.into_input().await?;
-                println!("did a block! {block_num}");
-                Ok::<_, anyhow::Error>(input)
-            }
-        })
-        .buffered(8) // at most 8 concurrent
-        .try_collect() // Vec<_>, same order as `blocks`
-        .await?;
-
-    println!("Running Debt Reporting in the guest for {blocks:?}");
-
+    println!("Starting Guest!");
     let session_info = {
         let mut builder = ExecutorEnv::builder();
 
         builder
-            .write(&blocks)
-            .context("failed to write blocks into executor env")?;
+            .write(&autopool)
+            .context("Failed to write autopool Address")?;
+
         builder
-            .write(&inputs)
-            .context("failed to write inputs into executor env")?;
+            .write(&inputs_as_vector)
+            .context("Failed to write input envs")?;
 
         let env = builder.build().context("failed to build executor env")?;
 
@@ -122,12 +77,11 @@ async fn main() -> Result<()> {
             .context("failed to run executor")?
     };
 
-    // The journal should be the ABI encoded commitment.
     let average_safe_price_commitment =
-        AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
-            .context("failed to decode journal")?;
+    AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
+        .context("failed to decode journal")?;
 
     stub_post_commitment_on_chain(average_safe_price_commitment);
-
+    
     Ok(())
 }
