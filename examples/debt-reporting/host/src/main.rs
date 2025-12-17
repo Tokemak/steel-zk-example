@@ -40,8 +40,8 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
-    // let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
-    let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
+    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
+                                                                                    // let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
     let latest = provider.get_block_number().await?;
 
     println!("Starting Address Preflight");

@@ -2,6 +2,23 @@
 - The preflight is 4 minutes, and the guest execution on my local (no crazy gpu) mac only 5 seconds
 - The constants have to be read onchain first but after that all the
 
+ 
+root_price_oracle_contract
+    .call_builder(&get_range_prices_lp_call)
+    // .call()
+    // some nodes require a “from” that won’t fail funds checks for access-list generation
+    // .from(address!("00000000219ab540356cBB839Cbe05303d7705Fa"))
+    .call_with_prefetch()
+    .await?
+    .into(); 
+
+did not make is faster
+
+this is the wstETH (holding) destination vault, for some reason it showing the prices are not safe
+
+6    0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0 0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0 
+0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 0xd100c932801390fdebce11f26f611d4898b44236       646790319157244723      1221458445154686690 false     
+
 
 
 ## autoUSD

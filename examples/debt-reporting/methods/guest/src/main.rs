@@ -41,8 +41,7 @@ use risc0_zkvm::guest::env;
 risc0_zkvm::guest::entry!(main);
 
 // if any of the spot prices are not safe it is not safe
-// otherwise average the spot prices
-
+// write the average of the spot prices
 /*
 Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part 
 not that every single call came from that block. wait for the latest version of steel to become the stable release
@@ -196,7 +195,7 @@ fn main() {
             ComputedGetRangePriceLP {
                 averageSpotPriceInQuote: avg_spot,
                 latestSafePriceInQuote: latest_safe,
-                isSpotSafeZK: unsafe_spot_prices_destinations.contains(&key),
+                isSpotSafeZK: !unsafe_spot_prices_destinations.contains(&key),
             },
         ));
 

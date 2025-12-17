@@ -4,6 +4,9 @@
 // use std::sync::Arc;
 // use tokio::{sync::Semaphore, task::JoinSet};
 
+use std::sync::Arc;
+use tokio::{sync::Semaphore, task::JoinSet};
+
 use alloy_primitives::{Address, U256};
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
@@ -16,8 +19,6 @@ use risc0_steel::{
     Contract,
 };
 
-// TODO all the loops should be done in threads, order does not matter
-// very slow other wise
 
 pub async fn preflight_prices_calls(
     autopool_constants: &AutopoolAddressConstants,
@@ -46,7 +47,7 @@ pub async fn preflight_prices_calls(
             let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
                 root_price_oracle_contract
                     .call_builder(&get_range_prices_lp_call)
-                    .call()
+                    .call_with_prefetch()
                     .await?
                     .into();
         };
@@ -55,7 +56,6 @@ pub async fn preflight_prices_calls(
     Ok(input)
 }
 
-// just use for the latest block
 pub async fn preflight_autopool_constants_and_prices(
     autopool: Address,
     provider: RootProvider,
@@ -96,7 +96,6 @@ pub async fn preflight_autopool_constants_and_prices(
         Vec::with_capacity(destination_vaults.len());
 
     for dv in destination_vaults {
-        // weird things with mutable borrows so we have to make it be in nested scopes like this
         let (token, pool) = {
             let mut destination_vault_contract = Contract::preflight(dv, &mut env);
 
@@ -123,13 +122,10 @@ pub async fn preflight_autopool_constants_and_prices(
 
             let mut root_price_oracle_contract = Contract::preflight(root_price_oracle, &mut env);
 
-            // get it working then make it not redundent
-            // make the call but we don't use it here
-            // just so that we can use this later
             let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
                 root_price_oracle_contract
                     .call_builder(&get_range_prices_lp_call)
-                    .call()
+                    .call_with_prefetch()
                     .await?
                     .into();
         };
@@ -149,24 +145,6 @@ pub async fn preflight_autopool_constants_and_prices(
         baseAsset: base_asset,
         destinationVaultKeys: destination_vault_keys,
     };
-
-    // Or print specific fields (works even without Debug on the whole struct):
-    println!("Inside of helper in the host!");
-
-    println!("autopool: {:?}", autopool_address_constants.autopool);
-    println!(
-        "systemRegistry: {:?}",
-        autopool_address_constants.systemRegistry
-    );
-    println!(
-        "rootPriceOracle: {:?}",
-        autopool_address_constants.rootPriceOracle
-    );
-    println!("baseAsset: {:?}", autopool_address_constants.baseAsset);
-    println!(
-        "destinationVaultKeys len: {}",
-        autopool_address_constants.destinationVaultKeys.len()
-    );
 
     let input = env.into_input().await?;
     Ok((input, autopool_address_constants))
