@@ -1,24 +1,49 @@
+use debt_reporting_abi::DestinationsZKPricesCommitment;
 
-use debt_reporting_abi::{
-    AverageSafePriceCommitment
-};
+pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
+    println!("Stub for submitting a transaction to validate debt reporting\n");
 
-pub fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafePriceCommitment) {
-    /*
-    After this, we should push received price data
-    (along with the proof in a transient storage), ((not certain what transient storage means here))
-    to a new ZK executor contract.
-    */
-    // const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");
+    // High-level summary
+    println!("Commitment: {:#?}", c.commitment);
 
-    println!("Stub for submitting a transaction to validate debt reporting");
+    let ac = &c.autopoolConstants;
+    println!("Autopool constants:");
+    println!("  autopool:       {:?}", ac.autopool);
+    println!("  systemRegistry: {:?}", ac.systemRegistry);
+    println!("  rootPriceOracle:{:?}", ac.rootPriceOracle);
+    println!("  baseAsset:      {:?}", ac.baseAsset);
+    println!("  destinationVaultKeys: {}", ac.destinationVaultKeys.len());
+    println!("  priceInfo rows:        {}", c.priceInfo.len());
+    println!();
 
-    let c = &average_safe_price_commitment;
-    println!("commitment: {:?}", c.commitment);
+    // Table header
+    println!(
+        "{:<4} {:<42} {:<42} {:<42} {:<42} {:>24} {:>24} {:<10}",
+        "idx",
+        "token",
+        "pool",
+        "baseAsset",
+        "destinationVault",
+        "avgSpot",
+        "latestSafe",
+        "spotSafe?"
+    );
+    println!("{}", "-".repeat(180));
 
-    for (lp_token, avg_price) in &c.priceInfo {
-        println!("lp_token: {lp_token:?}, avg_safe_price: {avg_price}");
+    // Rows
+    for (i, (key, price)) in c.priceInfo.iter().enumerate() {
+        println!(
+            "{:<4} {:<42} {:<42} {:<42} {:<42} {:>24} {:>24} {:<10}",
+            i,
+            format!("{:?}", key.token),
+            format!("{:?}", key.pool),
+            format!("{:?}", key.baseAsset),
+            format!("{:?}", key.destinationVault),
+            price.averageSpotPriceInQuote,
+            price.latestSafePriceInQuote,
+            price.isSpotSafeZK,
+        );
     }
-    println!("blocks: {:?}", c.blocks);
-}
 
+    println!("\n(Stub) would now build + send tx with proof + commitment payload...");
+}

@@ -1,12 +1,15 @@
 mod preflight;
 use preflight::{preflight_autopool_constants_and_prices, preflight_prices_calls};
 
+mod push_prices_onchain;
+use push_prices_onchain::stub_post_commitment_onchain;
+
 use alloy_primitives::{address, Address};
 use anyhow::{Context, Result};
 
 use alloy_sol_types::SolValue;
 use clap::Parser;
-use debt_reporting_abi::{AutopoolAddressConstants, AutopoolAddressConstantsCommitment};
+use debt_reporting_abi::DestinationsZKPricesCommitment;
 use debt_reporting_methods::DEBT_REPORTING_GUEST_ELF;
 use risc0_steel::alloy::providers::Provider;
 use risc0_steel::alloy::providers::{ProviderBuilder, RootProvider};
@@ -48,8 +51,6 @@ async fn main() -> Result<()> {
     inputs_as_vector.push(latest_input);
 
     let historical_blocks = vec![latest - 2, latest - 1];
-
-    // maybe overflow errors
     for block in historical_blocks {
         println!("Starting Prices Preflight!");
         let just_prices_input =
@@ -77,11 +78,11 @@ async fn main() -> Result<()> {
             .context("failed to run executor")?
     };
 
-    let average_safe_price_commitment =
-        AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
+    let destinations_zk_prices_commitment =
+        DestinationsZKPricesCommitment::abi_decode(session_info.journal.as_ref())
             .context("failed to decode journal")?;
 
-    stub_post_commitment_on_chain(average_safe_price_commitment);
+    stub_post_commitment_onchain(destinations_zk_prices_commitment);
 
     Ok(())
 }

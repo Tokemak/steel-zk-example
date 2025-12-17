@@ -1,5 +1,5 @@
-// use alloy_primitives::{address};
 use alloy_sol_types::sol;
+use core::cmp::Ordering;
 use risc0_steel::Commitment;
 
 sol! {
@@ -75,16 +75,15 @@ sol! {
     }
 }
 
-
-
-
-use core::cmp::Ordering;
-
 impl Ord for DestinationVaultKey {
     // required for the BTreeSet and BTreeMap
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.token, self.pool, self.baseAsset, self.destinationVault)
-            .cmp(&(other.token, other.pool, other.baseAsset, other.destinationVault))
+        (self.token, self.pool, self.baseAsset, self.destinationVault).cmp(&(
+            other.token,
+            other.pool,
+            other.baseAsset,
+            other.destinationVault,
+        ))
     }
 }
 

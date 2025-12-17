@@ -179,20 +179,29 @@ fn main() {
     }
 
     let key_to_average_spot_price = compute_average_spot_price_by_destination_vault(all_spot_prices_instances, num_blocks_sampled);
-    let price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> = Vec::with_capacity(autopool_constants.destinationVaultKeys.len());
+    let mut price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> = Vec::with_capacity(autopool_constants.destinationVaultKeys.len());
 
     for key in &autopool_constants.destinationVaultKeys {
 
-        let computed_range_price_lp = 
-        price_info.push(
-            (key.clone(), ComputedGetRangePriceLP {
-                averageSpotPriceInQuote: key_to_average_spot_price.get(&key),
-                latestSafePriceInQuote: latest_block_safe_prices.get(&key),
-                isSpotSafeZK: unsafe_spot_prices_destinations.contains(&key),
-            })
-        );
-    }
+        let avg_spot: U256 = *key_to_average_spot_price
+        .get(&key)
+        .expect("missing avg spot price for key");
 
+    let latest_safe: U256 = *latest_block_safe_prices
+        .get(&key)
+        .expect("missing latest safe price for key");
+
+        price_info.push((
+            key.clone(),
+            ComputedGetRangePriceLP {
+                averageSpotPriceInQuote: avg_spot,
+                latestSafePriceInQuote: latest_safe,
+                isSpotSafeZK: unsafe_spot_prices_destinations.contains(&key),
+            },
+        ));
+
+
+    }
   
     let journal = DestinationsZKPricesCommitment {
         commitment: env.into_commitment(),
@@ -207,13 +216,13 @@ fn main() {
 fn compute_average_spot_price_by_destination_vault(
     all_spot_prices_instances: Vec<(DestinationVaultKey, U256)>,
     expected_count_per_key: u64,
-) -> BTreeMap<(DestinationVaultKey, U256)> {
+) -> BTreeMap<DestinationVaultKey, U256> {
     // same concept as .groupby(destination_vault_key)[spot_price].avg() -> dict[key] : average spot price
 
     let expected_count_per_key_u256: U256 = U256::from(expected_count_per_key);
     let mut running_sum_by_key: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new(); 
 
-    for {destination_vault_key, spot_price_value} in all_spot_prices_instances {
+    for (destination_vault_key, spot_price_value) in all_spot_prices_instances {
         // Get the slot for this key (create it with 0 if it's new).
         let running_sum_for_key: &mut U256 = running_sum_by_key
             .entry(destination_vault_key)
@@ -223,7 +232,7 @@ fn compute_average_spot_price_by_destination_vault(
         *running_sum_for_key += spot_price_value; 
     }
 
-    let mut average_price_by_key : Vec<(DestinationVaultKey, U256)> = running_sum_by_key
+    let average_price_by_key : Vec<(DestinationVaultKey, U256)> = running_sum_by_key
         .into_iter()
         .map(|(destination_vault_key, running_sum_u256)| {
             let average_price_u256: U256 = running_sum_u256 / expected_count_per_key_u256;
@@ -231,10 +240,10 @@ fn compute_average_spot_price_by_destination_vault(
         })
         .collect();
 
-    let key_to_average_price = BTreeMap::new();
+    let mut key_to_average_price = BTreeMap::new();
 
-    for {key, average_price} in average_price_by_key {
-        key_to_average_price.insert(key, average_price)
+    for (key, average_price) in average_price_by_key {
+        key_to_average_price.insert(key, average_price);
     }
     key_to_average_price
 }

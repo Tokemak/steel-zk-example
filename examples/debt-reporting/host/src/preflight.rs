@@ -1,8 +1,8 @@
 // host/src/preflight_fetch_contract_addresses.rs
 
-use anyhow::Result;
-use std::sync::Arc;
-use tokio::{sync::Semaphore, task::JoinSet};
+// use anyhow::Result;
+// use std::sync::Arc;
+// use tokio::{sync::Semaphore, task::JoinSet};
 
 use alloy_primitives::{Address, U256};
 use debt_reporting_abi::{
@@ -23,7 +23,7 @@ pub async fn preflight_prices_calls(
     autopool_constants: &AutopoolAddressConstants,
     provider: RootProvider,
     block: u64,
-) -> Result<EthEvmInput> {
+) -> Result<EthEvmInput, anyhow::Error> {
     let mut env = EthEvmEnv::builder()
         .provider(provider)
         .block_number(block)
@@ -60,7 +60,7 @@ pub async fn preflight_autopool_constants_and_prices(
     autopool: Address,
     provider: RootProvider,
     block: u64,
-) -> Result<(EthEvmInput, AutopoolAddressConstants)> {
+) -> Result<(EthEvmInput, AutopoolAddressConstants), anyhow::Error> {
     let mut env = EthEvmEnv::builder()
         .provider(provider)
         .block_number(block)
