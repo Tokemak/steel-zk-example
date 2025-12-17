@@ -1,6 +1,5 @@
 // host/src/preflight_fetch_contract_addresses.rs
 
-
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::{sync::Semaphore, task::JoinSet};

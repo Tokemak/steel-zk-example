@@ -9,6 +9,8 @@ pub fn stub_post_commitment_on_chain(average_safe_price_commitment: AverageSafeP
     (along with the proof in a transient storage), ((not certain what transient storage means here))
     to a new ZK executor contract.
     */
+    // const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");
+
     println!("Stub for submitting a transaction to validate debt reporting");
 
     let c = &average_safe_price_commitment;

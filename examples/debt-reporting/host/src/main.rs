@@ -78,10 +78,10 @@ async fn main() -> Result<()> {
     };
 
     let average_safe_price_commitment =
-    AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
-        .context("failed to decode journal")?;
+        AverageSafePriceCommitment::abi_decode(session_info.journal.as_ref())
+            .context("failed to decode journal")?;
 
     stub_post_commitment_on_chain(average_safe_price_commitment);
-    
+
     Ok(())
 }
