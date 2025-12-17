@@ -1,5 +1,5 @@
-// use alloy_primitives::{address};
 use alloy_sol_types::sol;
+use core::cmp::Ordering;
 use risc0_steel::Commitment;
 
 sol! {
@@ -49,12 +49,6 @@ sol! {
         address destinationVault;
     }
 
-    struct ComputedGetRangePriceLP{
-        uint256 averageSpotPriceInQuote;
-        uint256 recentSafePriceInQuote;
-        bool isSpotSafeZK;
-    }
-
     struct AutopoolAddressConstants {
         address autopool;
         address systemRegistry;
@@ -68,21 +62,38 @@ sol! {
         AutopoolAddressConstants autopoolConstants;
     }
 
+    struct ComputedGetRangePriceLP{
+        uint256 averageSpotPriceInQuote;
+        uint256 latestSafePriceInQuote;
+        bool isSpotSafeZK;
+    }
+
     struct DestinationsZKPricesCommitment {
         Commitment commitment;
         AutopoolAddressConstants autopoolConstants;
-        (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo; // lpToken, averageSafePrice
+        (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo;
     }
 }
 
-// might not be used
+impl Ord for DestinationVaultKey {
+    // required for the BTreeSet and BTreeMap
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.token, self.pool, self.baseAsset, self.destinationVault).cmp(&(
+            other.token,
+            other.pool,
+            other.baseAsset,
+            other.destinationVault,
+        ))
+    }
+}
+
+impl PartialOrd for DestinationVaultKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// might not be needed
 // pub fn keccak256_destination_vault_key(dvk: &DestinationVaultKey) -> B256 {
 //     keccak256(dvk.abi_encode())
 // }
-
-// const EOA_TOKEMAK_WALLET: Address = address!("91aa2CcE6B22Ec9eCd8A56C830566e67187fe07E");
-// pub const USDC_MAINNET: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-// pub const ROOT_PRICE_ORACLE: Address = address!("61F8BE7FD721e80C0249829eaE6f0DAf21bc2CaC");
-// pub const A_LP_TOKEN: Address = address!("64273624eb57c5cA961d366CBF3968e760Bf0452");
-// pub const BAL_AAVE_GHO_USDT_USDC_DESTINATION_VAULT: Address =
-//     address!("0x366C094C5563CD12AF27b9AfFF2200B0E0D056E0");
