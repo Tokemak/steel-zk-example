@@ -17,7 +17,9 @@ use risc0_steel::ethereum::EthEvmInput;
 use risc0_zkvm::{default_executor, ExecutorEnv};
 
 use tracing_subscriber::EnvFilter;
-use url::Url; // not sure what this is and what it is used for
+use url::Url;
+
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
@@ -38,28 +40,36 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
-    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
+    // let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"); // autoETH
+    let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
     let latest = provider.get_block_number().await?;
 
     println!("Starting Address Preflight");
+    let t = Instant::now();
     let (latest_input, autopool_constants) =
         preflight_autopool_constants_and_prices(autopool, provider.clone(), latest).await?;
-    println!("Finished Address Preflight!");
+    println!("Finished Address Preflight in {:?}", t.elapsed());
 
     let mut inputs_as_vector: Vec<EthEvmInput> = Vec::with_capacity(3);
 
     inputs_as_vector.push(latest_input);
 
     let historical_blocks = vec![latest - 2, latest - 1];
+
     for block in historical_blocks {
-        println!("Starting Prices Preflight!");
+        let t = Instant::now();
+        println!("Starting Prices Preflight for block {block:?}");
         let just_prices_input =
             preflight_prices_calls(&autopool_constants, provider.clone(), block).await?;
         inputs_as_vector.push(just_prices_input);
-        println!("Finished Prices Preflight! {block:?}");
+        println!(
+            "Finished Prices Preflight for block {block:?} in {:?}",
+            t.elapsed()
+        );
     }
 
     println!("Starting Guest!");
+    let t = Instant::now();
     let session_info = {
         let mut builder = ExecutorEnv::builder();
 
@@ -77,6 +87,7 @@ async fn main() -> Result<()> {
         exec.execute(env, DEBT_REPORTING_GUEST_ELF)
             .context("failed to run executor")?
     };
+    println!("Guest execution took {:?}", t.elapsed());
 
     let destinations_zk_prices_commitment =
         DestinationsZKPricesCommitment::abi_decode(session_info.journal.as_ref())

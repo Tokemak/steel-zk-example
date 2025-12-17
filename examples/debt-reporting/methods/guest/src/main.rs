@@ -187,9 +187,9 @@ fn main() {
         .get(&key)
         .expect("missing avg spot price for key");
 
-    let latest_safe: U256 = *latest_block_safe_prices
-        .get(&key)
-        .expect("missing latest safe price for key");
+        let latest_safe: U256 = *latest_block_safe_prices
+            .get(&key)
+            .expect("missing latest safe price for key");
 
         price_info.push((
             key.clone(),

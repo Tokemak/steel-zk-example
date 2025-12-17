@@ -28,7 +28,7 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
         "latestSafe",
         "spotSafe?"
     );
-    println!("{}", "-".repeat(180));
+    println!("{}", "-".repeat(240));
 
     // Rows
     for (i, (key, price)) in c.priceInfo.iter().enumerate() {
