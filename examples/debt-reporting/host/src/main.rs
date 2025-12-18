@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     println!("Finished Address Preflight in {:?}", t.elapsed());
     let autopool_constants = Arc::new(autopool_constants);
 
-    let historical_blocks: Vec<u64> = (0..5).map(|i| latest - i).collect();
+    let historical_blocks: Vec<u64> = (0..100).map(|i| latest - i).collect();
     let mut set = JoinSet::new();
     let t = Instant::now();
     

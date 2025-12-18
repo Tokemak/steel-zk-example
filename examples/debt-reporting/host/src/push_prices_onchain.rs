@@ -18,11 +18,8 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
 
     // Table header
     println!(
-        "{:<4} {:<42} {:<42} {:<42} {:<42} {:>24} {:>24} {:<10}",
+        "{:<4} {:<42} {:>24} {:>24} {:<10}",
         "idx",
-        "token",
-        "pool",
-        "baseAsset",
         "destinationVault",
         "avgSpot",
         "latestSafe",
@@ -33,11 +30,8 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
     // Rows
     for (i, (key, price)) in c.priceInfo.iter().enumerate() {
         println!(
-            "{:<4} {:<42} {:<42} {:<42} {:<42} {:>24} {:>24} {:<10}",
+            "{:<4} {:<42} {:>24} {:>24} {:<10}",
             i,
-            format!("{:?}", key.token),
-            format!("{:?}", key.pool),
-            format!("{:?}", key.baseAsset),
             format!("{:?}", key.destinationVault),
             price.averageSpotPriceInQuote,
             price.latestSafePriceInQuote,
