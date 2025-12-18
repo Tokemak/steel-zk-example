@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     while let Some(res) = set.join_next().await {
         let input = res??;
         inputs_as_vector.push(input);
-        // 70 seconds for autoETH
+        // 70ish seconds for autoETH per block
         // can put a progress bar here if inclined
     }
 
