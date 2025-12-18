@@ -1,12 +1,3 @@
-// host/src/preflight_fetch_contract_addresses.rs
-
-// use anyhow::Result;
-// use std::sync::Arc;
-// use tokio::{sync::Semaphore, task::JoinSet};
-
-use std::sync::Arc;
-use tokio::{sync::Semaphore, task::JoinSet};
-
 use alloy_primitives::{Address, U256};
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
@@ -19,8 +10,7 @@ use risc0_steel::{
     Contract,
 };
 
-
-pub async fn preflight_prices_calls(
+pub async fn preflight_prices(
     autopool_constants: &AutopoolAddressConstants,
     provider: RootProvider,
     block: u64,
@@ -56,7 +46,7 @@ pub async fn preflight_prices_calls(
     Ok(input)
 }
 
-pub async fn preflight_autopool_constants_and_prices(
+pub async fn preflight_autopool_constants(
     autopool: Address,
     provider: RootProvider,
     block: u64,
@@ -110,24 +100,6 @@ pub async fn preflight_autopool_constants_and_prices(
                 .await?;
 
             (token, pool)
-        };
-
-        {
-            let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
-                IMinimalRootPriceOracle::getRangePricesLPCall {
-                    lpToken: token,
-                    pool: pool,
-                    quoteToken: base_asset,
-                };
-
-            let mut root_price_oracle_contract = Contract::preflight(root_price_oracle, &mut env);
-
-            let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
-                root_price_oracle_contract
-                    .call_builder(&get_range_prices_lp_call)
-                    .call_with_prefetch()
-                    .await?
-                    .into();
         };
 
         destination_vault_keys.push(DestinationVaultKey {

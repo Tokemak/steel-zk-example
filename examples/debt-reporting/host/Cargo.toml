@@ -18,7 +18,6 @@ futures = "0.3"
 debt-reporting-methods = { workspace = true }
 debt-reporting-abi = {workspace = true}
 
-
 [profile.dev]
 opt-level = 0
 debug = true
