@@ -64,8 +64,9 @@ async fn main() -> Result<()> {
     for block in historical_blocks {
         let provider = provider.clone();
         let autopool_constants = autopool_constants.clone();
+        let multicall3 = multicall3.clone(); // not certain here if we need to clone it
         set.spawn(async move {
-            let input = preflight_prices(&autopool_constants, provider, block).await?;
+            let input = preflight_prices(&autopool_constants, multicall3, provider, block).await?;
             Ok::<EthEvmInput, anyhow::Error>(input)
         });
     }
