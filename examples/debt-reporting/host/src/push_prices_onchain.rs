@@ -19,11 +19,7 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
     // Table header
     println!(
         "{:<4} {:<42} {:>24} {:>24} {:<10}",
-        "idx",
-        "destinationVault",
-        "avgSpot",
-        "latestSafe",
-        "spotSafe?"
+        "idx", "destinationVault", "avgSpot", "latestSafe", "spotSafe?"
     );
     println!("{}", "-".repeat(240));
 
