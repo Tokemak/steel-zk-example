@@ -64,13 +64,18 @@ sol! {
         address baseAsset; // redundent
         address destinationVault;
     }
-
+    // do we even need this?
     struct AutopoolAddressConstants {
         address autopool;
-        address systemRegistry;
-        address rootPriceOracle;
         address baseAsset; // is redundent, don't worry about for now
         DestinationVaultKey[] destinationVaultKeys;
+    }
+
+    struct ChainAddressConstants {
+        address multicall3;
+        address systemRegistry;
+        address rootPriceOracle;
+        address[] autopools; // not sure if we need this here
     }
 
     struct AutopoolAddressConstantsCommitment {
@@ -84,9 +89,15 @@ sol! {
         bool isSpotSafeZK;
     }
 
+    // todo switch to writing the packed one
+    struct PackedComputedGetRangePriceLP{
+        uint112 averageSpotPriceInQuote;
+        uint112 latestSafePriceInQuote;
+        uint8 isSpotSafeZK;
+    }
+
     struct DestinationsZKPricesCommitment {
         Commitment commitment;
-        AutopoolAddressConstants[] allAutopoolConstants;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo;
     }
 }

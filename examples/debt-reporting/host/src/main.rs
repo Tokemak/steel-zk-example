@@ -4,7 +4,9 @@ use preflight::{preflight_autopool_constants, preflight_prices};
 mod push_prices_onchain;
 use push_prices_onchain::stub_post_commitment_onchain;
 
-use alloy_primitives::{address, Address};
+use debt_reporting_abi::ChainAddressConstants;
+
+use alloy_primitives::{address};
 use alloy_sol_types::SolValue;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -29,6 +31,35 @@ struct Args {
     beacon_api_url: Url,
 }
 
+fn stub_read_cli_args() -> ChainAddressConstants {
+    let systemRegistry = address!("0x2218f90a98b0c070676f249ef44834686daa4285");
+    let rootPriceOracle = address!("0x61f8be7fd721e80c0249829eae6f0daf21bc2cac");
+    let multicall3 = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
+
+    let autopools = vec![
+        address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
+        address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
+        address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
+        address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
+    ];
+
+    ChainAddressConstants {
+        multicall3,
+        systemRegistry,
+        rootPriceOracle,
+        autopools,
+    }
+}
+
+// fn _stub_pseudo_random_block_selection() -> Vec<u64> {
+//     // some function that takes in teh block hash of latest block, and uses that to
+//     // select 3 of the prior blocks in the last minute
+//     // not essential but could be helpful to make it less exploitable
+
+//     let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
+//     historical_blocks
+// }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let full_start = Instant::now();
@@ -37,71 +68,71 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
+    let chain_address_constants: ChainAddressConstants = stub_read_cli_args();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
 
-    let autopools = vec![
-        address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
-        address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
-        address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
-        address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
-    ];
-    let multicall3: Address = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
-
     let latest = provider.get_block_number().await?;
-    println!("Starting Address Preflight");
+    println!("Starting Destination Vault Keys Preflight");
     let t = Instant::now();
-    let (all_autopool_constants_input, all_autopool_constants) =
-        preflight_autopool_constants(autopools.clone(), multicall3, provider.clone(), latest)
+    let (destination_vault_keys_input, destination_vault_keys) =
+        preflight_autopool_constants(chain_address_constants.clone(), provider.clone(), latest)
             .await?;
-    println!("Finished Address Preflight in {:?}", t.elapsed());
-
-    let all_autopool_constants = Arc::new(all_autopool_constants);
-
-    // note use some pseudo randomness here, blocks have to be determined by the host,
-    // so not hard garentees about the randomness
-    let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
-    let mut set = JoinSet::new();
-    let t = Instant::now();
 
     println!(
-        "Starting {:?} blocks Prices Preflight",
-        (historical_blocks.len() as u64)
+        "Finished Destination Vault Keys Preflight in {:?} found {:?} unique destinations",
+        t.elapsed(),
+        (destination_vault_keys.len() as u64)
     );
+    let input_vector = {
+        let historical_blocks: Vec<u64> =  (0..3).map(|i| latest - i).collect();
+        let mut set = JoinSet::new();
+        let t = Instant::now();
 
-    for block in historical_blocks {
-        let provider = provider.clone();
-        let all_autopool_constants = all_autopool_constants.clone();
-        let multicall3 = multicall3.clone();
-        set.spawn(async move {
-            let input =
-                preflight_prices(&all_autopool_constants, multicall3, provider, block).await?;
-            Ok::<EthEvmInput, anyhow::Error>(input)
-        });
-    }
+        let destination_vault_keys = Arc::new(destination_vault_keys); // needed to use in threads, not sure why
+        println!(
+            "Starting {:?} blocks Prices Preflight",
+            (historical_blocks.len() as u64)
+        );
 
-    let mut inputs_as_vector = Vec::new();
-    inputs_as_vector.push(all_autopool_constants_input);
-    while let Some(res) = set.join_next().await {
-        let input = res??;
-        inputs_as_vector.push(input);
-        // can put a progress bar here if inclined
-    }
+        for block in historical_blocks {
+            let provider = provider.clone();
+            let chain_address_constants = chain_address_constants.clone();
+            let destination_vault_keys = destination_vault_keys.clone().to_vec();
+            set.spawn(async move {
+                let input = preflight_prices(
+                    chain_address_constants,
+                    destination_vault_keys,
+                    provider,
+                    block,
+                )
+                .await?;
+                Ok::<EthEvmInput, anyhow::Error>(input)
+            });
+        }
 
-    println!("Finished Prices Preflight in {:?}", t.elapsed());
+        let mut input_vector = Vec::new();
+        input_vector.push(destination_vault_keys_input);
+
+        while let Some(res) = set.join_next().await {
+            let prices_input = res??;
+            input_vector.push(prices_input);
+        }
+        println!("Finished Prices Preflight in {:?}", t.elapsed());
+    };
+
+
 
     let destinations_zk_prices_commitment = {
         println!("Starting Guest!");
         let t = Instant::now();
         let session_info = {
             let mut builder = ExecutorEnv::builder();
-
-            // do I even need to
             builder
-                .write(&autopools)
+                .write(&chain_address_constants)
                 .context("Failed to write autopool Address")?;
 
             builder
-                .write(&inputs_as_vector)
+                .write(&input_vector)
                 .context("Failed to write input envs")?;
 
             let env = builder.build().context("failed to build executor env")?;
@@ -119,7 +150,6 @@ async fn main() -> Result<()> {
     };
 
     stub_post_commitment_onchain(destinations_zk_prices_commitment);
-
     println!("End to end {:?}", full_start.elapsed());
     Ok(())
 }
