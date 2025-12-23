@@ -56,59 +56,67 @@ there are issues with telling the complier the type of`some_input.into_env(&ETH_
 */
 
 fn main() {
-    let autopool: Address = env::read();
+    let autopools: Vec<Address> = env::read();
     let several_inputs: Vec<EthEvmInput> = env::read();
-    let num_blocks_sampled = (several_inputs.len() as u64) - 1; // 2 envs for the first block, one for constants one for prices
+    let num_blocks_sampled = (several_inputs.len() as u64) - 1; // 2 envs for the first block, one for constants and one for prices
+    
     let mut iter = several_inputs.into_iter();
     let autopool_constants_input: EthEvmInput = iter.next().expect("need at least one EthEvmInput");
     let autopool_constants_env = autopool_constants_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
     let constants_block_number = autopool_constants_env.header().number;
 
-    let autopool_constants = {
-        let autopool_contract = Contract::new(autopool, &autopool_constants_env);
-        let destination_vaults: Vec<Address> = autopool_contract
-            .call_builder(&IMinimalAutoPool::getDestinationsCall {})
-            .call();
-        let base_asset: Address = autopool_contract
-            .call_builder(&IMinimalAutoPool::assetCall {})
-            .call();
-        let system_registry: Address = autopool_contract
-            .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
-            .call();
-        let system_registry_contract = Contract::new(system_registry, &autopool_constants_env);
-        let root_price_oracle: Address = system_registry_contract
-            .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
-            .call();
-        let mut destination_vault_keys: Vec<DestinationVaultKey> =
-            Vec::with_capacity(destination_vaults.len());
+    let all_autopool_constants = {
+    let mut all_autopool_constants = Vec<AutopoolAddressConstants> = Vec::with_capacity(autopools.len());    
+    for autopool in autopools {
+            let autopool_constants = {
+                let autopool_contract = Contract::new(autopool, &autopool_constants_env);
+                let destination_vaults: Vec<Address> = autopool_contract
+                    .call_builder(&IMinimalAutoPool::getDestinationsCall {})
+                    .call();
+                let base_asset: Address = autopool_contract
+                    .call_builder(&IMinimalAutoPool::assetCall {})
+                    .call();
+                let system_registry: Address = autopool_contract
+                    .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
+                    .call();
+                let system_registry_contract = Contract::new(system_registry, &autopool_constants_env);
+                let root_price_oracle: Address = system_registry_contract
+                    .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
+                    .call();
+                let mut destination_vault_keys: Vec<DestinationVaultKey> =
+                    Vec::with_capacity(destination_vaults.len());
 
-        for destination_vault in destination_vaults {
-            let destination_vault_contract =
-                Contract::new(destination_vault, &autopool_constants_env);
-            let token: Address = destination_vault_contract
-                .call_builder(&IMinimalDestinationVault::underlyingCall {})
-                .call();
-            let pool: Address = destination_vault_contract
-                .call_builder(&IMinimalDestinationVault::getPoolCall {})
-                .call();
-            let key = DestinationVaultKey {
-                token: token,
-                pool: pool,
-                baseAsset: base_asset,
-                destinationVault: destination_vault,
+                for destination_vault in destination_vaults {
+                    let destination_vault_contract =
+                        Contract::new(destination_vault, &autopool_constants_env);
+                    let token: Address = destination_vault_contract
+                        .call_builder(&IMinimalDestinationVault::underlyingCall {})
+                        .call();
+                    let pool: Address = destination_vault_contract
+                        .call_builder(&IMinimalDestinationVault::getPoolCall {})
+                        .call();
+                    let key = DestinationVaultKey {
+                        token: token,
+                        pool: pool,
+                        baseAsset: base_asset,
+                        destinationVault: destination_vault,
+                    };
+                    destination_vault_keys.push(key.clone());
+                }
+                AutopoolAddressConstants {
+                    autopool: autopool,
+                    systemRegistry: system_registry,
+                    rootPriceOracle: root_price_oracle,
+                    baseAsset: base_asset,
+                    destinationVaultKeys: destination_vault_keys,
+                }
             };
-            destination_vault_keys.push(key.clone());
-        }
-
-        AutopoolAddressConstants {
-            autopool: autopool,
-            systemRegistry: system_registry,
-            rootPriceOracle: root_price_oracle,
-            baseAsset: base_asset,
-            destinationVaultKeys: destination_vault_keys,
-        }
+            all_autopool_constants.push(autopool_constants);
+        };
+        all_autopool_constants
     };
 
+    
     let (latest_block_safe_prices, unsafe_spot_prices_destinations, all_spot_prices_instances) = {
         let mut latest_block_safe_prices: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
         let mut unsafe_spot_prices_destinations: BTreeSet<DestinationVaultKey> = BTreeSet::new();
@@ -191,19 +199,16 @@ fn compute_average_spot_price_by_destination_vault(
     all_spot_prices_instances: Vec<(DestinationVaultKey, U256)>,
     expected_count_per_key: u64,
 ) -> BTreeMap<DestinationVaultKey, U256> {
-    // same concept as .groupby(destination_vault_key)[spot_price].avg() -> dict[key] : average spot price
-
+ 
     let expected_count_per_key_u256: U256 = U256::from(expected_count_per_key);
     let mut running_sum_by_key: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
 
     for (destination_vault_key, spot_price_value) in all_spot_prices_instances {
-        // Get the slot for this key (create it with 0 if it's new).
-        let running_sum_for_key: &mut U256 = running_sum_by_key
+         let running_sum_for_key: &mut U256 = running_sum_by_key
             .entry(destination_vault_key)
             .or_insert(U256::ZERO);
 
-        // * means the actual value, not the reference, this is the same concept as ``` some_dict[key] += some_value ```  # in python
-        *running_sum_for_key += spot_price_value;
+         *running_sum_for_key += spot_price_value;
     }
 
     let average_price_by_key: Vec<(DestinationVaultKey, U256)> = running_sum_by_key

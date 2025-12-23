@@ -38,20 +38,25 @@ async fn main() -> Result<()> {
         .init();
     let args = Args::parse();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
-    // autoETH  note: wstETH destination is broken
-    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56");
+
+    let autopools = vec![
+        address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
+        address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
+    ];
     let multicall3: Address = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
 
-    // let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
     let latest = provider.get_block_number().await?;
     println!("Starting Address Preflight");
     let t = Instant::now();
-    let (autopool_constants_input, autopool_constants) =
-        preflight_autopool_constants(autopool, multicall3, provider.clone(), latest).await?;
+    let (all_autopool_constants_input, all_autopool_constants) =
+        preflight_autopool_constants(autopools.clone(), multicall3, provider.clone(), latest)
+            .await?;
     println!("Finished Address Preflight in {:?}", t.elapsed());
-    let autopool_constants = Arc::new(autopool_constants);
 
-    // note use some pseudo randomness here
+    let all_autopool_constants = Arc::new(all_autopool_constants);
+
+    // note use some pseudo randomness here, blocks have to be determined by the host,
+    // so not hard garentees about the randomness
     let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
     let mut set = JoinSet::new();
     let t = Instant::now();
@@ -63,20 +68,20 @@ async fn main() -> Result<()> {
 
     for block in historical_blocks {
         let provider = provider.clone();
-        let autopool_constants = autopool_constants.clone();
-        let multicall3 = multicall3.clone(); // not certain here if we need to clone it
+        let all_autopool_constants = all_autopool_constants.clone();
+        let multicall3 = multicall3.clone();
         set.spawn(async move {
-            let input = preflight_prices(&autopool_constants, multicall3, provider, block).await?;
+            let input =
+                preflight_prices(&all_autopool_constants, multicall3, provider, block).await?;
             Ok::<EthEvmInput, anyhow::Error>(input)
         });
     }
 
     let mut inputs_as_vector = Vec::new();
-    inputs_as_vector.push(autopool_constants_input);
+    inputs_as_vector.push(all_autopool_constants_input);
     while let Some(res) = set.join_next().await {
         let input = res??;
         inputs_as_vector.push(input);
-        // 70ish seconds for autoETH per block
         // can put a progress bar here if inclined
     }
 
@@ -88,8 +93,9 @@ async fn main() -> Result<()> {
         let session_info = {
             let mut builder = ExecutorEnv::builder();
 
+            // do I even need to
             builder
-                .write(&autopool)
+                .write(&autopools)
                 .context("Failed to write autopool Address")?;
 
             builder
