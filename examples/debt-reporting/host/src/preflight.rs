@@ -1,21 +1,25 @@
+extern crate alloc;
+
 use alloy_primitives::Address;
 use alloy_sol_types::SolCall;
 use debt_reporting_abi::{
-    ChainAddressConstants, DestinationVaultKey, IMinimalAutoPool,
-    IMinimalDestinationVault, IMinimalRootPriceOracle, IMulticall3,
+    ChainAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
+    IMinimalRootPriceOracle, IMulticall3,
 };
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
+
 use risc0_steel::{
     alloy::providers::RootProvider,
     ethereum::{EthEvmEnv, EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
 };
 
-// todo, some kind of validation that the root price oralce -> system registry, and reverse,
+// todo, some kind of validation that the root price oracle -> system registry, and reverse,
 // and that they all point at each other
-
 // this uses multicall while the guest uses naive seqential logic, not certain on if I want it to be like that
+// the guest is determanistic, and makes no external calls so it is not faster to use multicall
+
 
 pub async fn preflight_autopool_constants(
     chain_address_constants: ChainAddressConstants,
@@ -51,10 +55,11 @@ pub async fn preflight_autopool_constants(
         };
 
         let destinations_and_base_asset = {
-            let mut multicall3_contract = Contract::preflight(chain_address_constants.multicall3, &mut env);
+            let mut multicall3_contract =
+                Contract::preflight(chain_address_constants.multicall3, &mut env);
             let results: Vec<IMulticall3::Result> = multicall3_contract
                 .call_builder(&IMulticall3::aggregate3Call {
-                    calls:destinations_and_base_asset_calls,
+                    calls: destinations_and_base_asset_calls,
                 })
                 .call_with_prefetch()
                 .await?
@@ -62,9 +67,9 @@ pub async fn preflight_autopool_constants(
 
             let mut destinations_and_base_asset: BTreeSet<(Address, Address)> = BTreeSet::new();
 
-            for (index, autopool) in chain_address_constants.autopools.iter().enumerate() {
-                let destinations_index = index;
-                let base_asset_index = index + 1;
+            for (index, _autopool) in chain_address_constants.autopools.iter().enumerate() {
+                let destinations_index = index * 2;
+                let base_asset_index = (index * 2) + 1;
                 let destination_vaults: Vec<Address> =
                     IMinimalAutoPool::getDestinationsCall::abi_decode_returns(
                         &results[destinations_index].returnData,
@@ -80,6 +85,7 @@ pub async fn preflight_autopool_constants(
             }
             destinations_and_base_asset
         };
+        destinations_and_base_asset
     };
 
     let destination_vault_keys = {
@@ -89,21 +95,24 @@ pub async fn preflight_autopool_constants(
 
             for (destination, _base_asset) in &destinations_with_base_asset {
                 calls.push(IMulticall3::Call3 {
-                    target: *destination_vault,
+                    target: *destination,
                     allowFailure: false,
-                    callData: get_pool_call.abi_encode().into(),
+                    callData: IMinimalDestinationVault::getPoolCall {}.abi_encode().into(),
                 });
 
                 calls.push(IMulticall3::Call3 {
-                    target: *destination_vault,
+                    target: *destination,
                     allowFailure: false,
-                    callData: underlying_call.abi_encode().into(),
+                    callData: IMinimalDestinationVault::underlyingCall {}
+                        .abi_encode()
+                        .into(),
                 });
             }
             calls
         };
 
-        let mut multicall3_contract = Contract::preflight(chain_address_constants.multicall3, &mut env);
+        let mut multicall3_contract =
+            Contract::preflight(chain_address_constants.multicall3, &mut env);
         let results: Vec<IMulticall3::Result> = multicall3_contract
             .call_builder(&IMulticall3::aggregate3Call { calls })
             .call_with_prefetch()
@@ -175,7 +184,7 @@ pub async fn preflight_prices(
         calls
     };
 
-    // todo include some limits to make sure that we are not overwhelming the gas limits
+    // TODO include some limits to make sure that we are not overwhelming the gas limits with too many calls
     let mut multicall3_contract = Contract::preflight(chain_address_constants.multicall3, &mut env);
 
     // just make the contract calls, we don't care about the results themselves in the preflight

@@ -6,7 +6,7 @@ use push_prices_onchain::stub_post_commitment_onchain;
 
 use debt_reporting_abi::ChainAddressConstants;
 
-use alloy_primitives::{address};
+use alloy_primitives::address;
 use alloy_sol_types::SolValue;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -32,8 +32,8 @@ struct Args {
 }
 
 fn stub_read_cli_args() -> ChainAddressConstants {
-    let systemRegistry = address!("0x2218f90a98b0c070676f249ef44834686daa4285");
-    let rootPriceOracle = address!("0x61f8be7fd721e80c0249829eae6f0daf21bc2cac");
+    let system_registry = address!("0x2218f90a98b0c070676f249ef44834686daa4285");
+    let root_price_oracle = address!("0x61f8be7fd721e80c0249829eae6f0daf21bc2cac");
     let multicall3 = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
 
     let autopools = vec![
@@ -41,24 +41,17 @@ fn stub_read_cli_args() -> ChainAddressConstants {
         address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
         address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
         address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
+        address!("0x52F0D57Fb5D4780a37164f918746f9BD51c684a3"), // siloETH
+        address!("0x408b6A3E2Daf288864968454AAe786a2A042Df36"), // siloUSD
     ];
 
     ChainAddressConstants {
-        multicall3,
-        systemRegistry,
-        rootPriceOracle,
-        autopools,
+        multicall3: multicall3,
+        systemRegistry: system_registry,
+        rootPriceOracle: root_price_oracle,
+        autopools: autopools,
     }
 }
-
-// fn _stub_pseudo_random_block_selection() -> Vec<u64> {
-//     // some function that takes in teh block hash of latest block, and uses that to
-//     // select 3 of the prior blocks in the last minute
-//     // not essential but could be helpful to make it less exploitable
-
-//     let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
-//     historical_blocks
-// }
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -84,7 +77,7 @@ async fn main() -> Result<()> {
         (destination_vault_keys.len() as u64)
     );
     let input_vector = {
-        let historical_blocks: Vec<u64> =  (0..3).map(|i| latest - i).collect();
+        let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
         let mut set = JoinSet::new();
         let t = Instant::now();
 
@@ -118,9 +111,8 @@ async fn main() -> Result<()> {
             input_vector.push(prices_input);
         }
         println!("Finished Prices Preflight in {:?}", t.elapsed());
+        input_vector
     };
-
-
 
     let destinations_zk_prices_commitment = {
         println!("Starting Guest!");

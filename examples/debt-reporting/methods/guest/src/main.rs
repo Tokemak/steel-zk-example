@@ -27,7 +27,7 @@ use alloy_sol_types::SolValue;
 use debt_reporting_abi::{
     ChainAddressConstants, ComputedGetRangePriceLP, DestinationVaultKey,
     DestinationsZKPricesCommitment, IMinimalAutoPool, IMinimalDestinationVault,
-    IMinimalRootPriceOracle, 
+    IMinimalRootPriceOracle,
 };
 use risc0_steel::{
     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
@@ -55,14 +55,22 @@ there are issues with telling the complier the type of`some_input.into_env(&ETH_
 
 */
 
+// fn revert_if_invalid_chain_address_constants(chain_address_constants: ChainAddressConstants ) {
+//     // todo
+//     // make sure that these addresses are right
+//     println!("In Guest, placeholder to validate that the ChainAddressConstants are correct");
+// }
+
 fn main() {
     let chain_address_constants: ChainAddressConstants = env::read();
     let preflighted_inputs: Vec<EthEvmInput> = env::read();
     // 2 envs for the first block, one was used to get all the destination addreses the other was used for prices
     let num_blocks_sampled = (preflighted_inputs.len() as u64) - 1;
     let mut preflighted_inputs_iter = preflighted_inputs.into_iter();
-    let destination_vault_keys_input: EthEvmInput =
-    preflighted_inputs_iter.next().expect("need at least one EthEvmInput");
+    let destination_vault_keys_input: EthEvmInput = preflighted_inputs_iter
+        .next()
+        .expect("need at least one EthEvmInput");
+
     let destination_vault_keys_env = destination_vault_keys_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
     let constants_block_number = destination_vault_keys_env.header().number;
 
@@ -70,7 +78,6 @@ fn main() {
         let mut destination_vault_keys: BTreeSet<DestinationVaultKey> = BTreeSet::new();
 
         for autopool in &chain_address_constants.autopools {
-
             let autopool_contract = Contract::new(*autopool, &destination_vault_keys_env);
             // might be fine consuming autopools here
             let destination_vaults: Vec<Address> = autopool_contract
@@ -158,38 +165,46 @@ fn main() {
         num_blocks_sampled,
     );
 
-    let mut price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> =
-        Vec::new();
+    let price_info = {
+        let mut price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> = Vec::new();
 
-    for key in &destination_vault_keys {
-            let avg_spot: U256 = *key_to_average_spot_price
-            .get(&key)
-            .unwrap_or_else(|| panic!("missing average spot price for destination vault key {:?}", key));
-        
-        let latest_safe: U256 = *latest_block_safe_prices
-            .get(&key)
-            .unwrap_or_else(|| panic!("missing latest safe price for destination vault key {:?}", key));
-        
+        for key in &destination_vault_keys {
+            // not sure if i should use panic here,
+            let avg_spot: U256 = *key_to_average_spot_price.get(&key).unwrap_or_else(|| {
+                panic!(
+                    "missing average spot price for destination vault key {:?}",
+                    key
+                )
+            });
 
-        let found_at_least_one_unsafe_price = unsafe_spot_prices_destinations.contains(&key);
+            let latest_safe: U256 = *latest_block_safe_prices.get(&key).unwrap_or_else(|| {
+                panic!(
+                    "missing latest safe price for destination vault key {:?}",
+                    key
+                )
+            });
 
-        let key_price_tuple = (
-            key.clone(),
-            ComputedGetRangePriceLP {
-                averageSpotPriceInQuote: avg_spot,
-                latestSafePriceInQuote: latest_safe,
-                isSpotSafeZK: !found_at_least_one_unsafe_price,
-            },
-        );
+            let found_at_least_one_unsafe_price = unsafe_spot_prices_destinations.contains(&key);
 
-        price_info.push(key_price_tuple);
-    }
+            let key_price_tuple = (
+                key.clone(),
+                ComputedGetRangePriceLP {
+                    averageSpotPriceInQuote: avg_spot,
+                    latestSafePriceInQuote: latest_safe,
+                    isSpotSafeZK: !found_at_least_one_unsafe_price,
+                },
+            );
+
+            price_info.push(key_price_tuple);
+        }
+        price_info
+    };
 
     // note need to connect the autopool_constants_env with the prices_env here
 
     let journal = DestinationsZKPricesCommitment {
         commitment: destination_vault_keys_env.into_commitment(),
-        priceInfo: price_info, // big dictionary like entity
+        priceInfo: price_info, // treated like a dictionary
     };
 
     env::commit_slice(&journal.abi_encode());
