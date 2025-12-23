@@ -1,4 +1,4 @@
-use alloy_primitives::{Address};
+use alloy_primitives::Address;
 use alloy_sol_types::SolCall;
 use debt_reporting_abi::{
     AutopoolAddressConstants, DestinationVaultKey, IMinimalAutoPool, IMinimalDestinationVault,
@@ -10,11 +10,6 @@ use risc0_steel::{
     ethereum::{EthEvmEnv, EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
     Contract,
 };
-
-// it appears that we can use multicall in the preflight, but normal calls inside of the guest
-// not certain if we *should* do it that way, but we can
-
-
 
 pub async fn preflight_prices(
     autopool_constants: &AutopoolAddressConstants,
@@ -42,49 +37,26 @@ pub async fn preflight_prices(
                 };
 
                 calls.push(IMulticall3::Call3 {
-                    target: autopool_constants.rootPriceOracle, // not sure here on references
+                    target: autopool_constants.rootPriceOracle,
                     allowFailure: false,
                     callData: get_range_prices_lp_call.abi_encode().into(),
                 });
             }
         }
         calls
-
     };
 
     let mut multicall3_contract = Contract::preflight(multicall3, &mut env);
+    // just make the contract calls, we don't care about the values themselves in the preflight
     let _results: Vec<IMulticall3::Result> = multicall3_contract
         .call_builder(&IMulticall3::aggregate3Call { calls })
-        .call()
+        .call_with_prefetch() // .call() also works, prefetch should be faster though
         .await?
         .into();
-
-    // not strictly required the preflight only needs to fetch them does not care about the values themselves
-    // let _prices_tuples = {
-    //     let mut prices_tuples = Vec::with_capacity(autopool_constants.destinationVaultKeys.len());
-
-    //     for (index, _key) in autopool_constants
-    //     .destinationVaultKeys
-    //     .iter()
-    //     .enumerate() {
-    //         let price_result = &results[index];
-
-    //         let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe) =
-    //             IMinimalRootPriceOracle::getRangePricesLPCall::abi_decode_returns(
-    //                 &price_result.returnData,
-    //             )?
-    //             .into();
-
-    //         prices_tuples.push((_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe));
-    //     }
-    //     prices_tuples
-    //     // maybe write out these price tuples somwhere
-    // };
 
     let input = env.into_input().await?;
     Ok(input)
 }
-
 
 pub async fn preflight_autopool_constants(
     autopool: Address,
@@ -100,32 +72,52 @@ pub async fn preflight_autopool_constants(
         .await?;
 
     let (destination_vaults, base_asset, system_registry, root_price_oracle) = {
-        let mut autopool_contract = Contract::preflight(autopool, &mut env);
-        // can be reduced down to two calls
-        // step 1 {destination_vaults, base_asset, system_registry} multicall
-        // step 2 {root price oracle & destination vault.getPool() and destination vault .underlying()}
+        let (destination_vaults, base_asset, system_registry) = {
+            let calls: Vec<IMulticall3::Call3> = vec![
+                IMulticall3::Call3 {
+                    target: autopool,
+                    allowFailure: false,
+                    callData: IMinimalAutoPool::getDestinationsCall {}.abi_encode().into(),
+                },
+                IMulticall3::Call3 {
+                    target: autopool,
+                    allowFailure: false,
+                    callData: IMinimalAutoPool::assetCall {}.abi_encode().into(),
+                },
+                IMulticall3::Call3 {
+                    target: autopool,
+                    allowFailure: false,
+                    callData: IMinimalAutoPool::getSystemRegistryCall {}
+                        .abi_encode()
+                        .into(),
+                },
+            ];
 
-        // TODO destination_vaults, base_asset, system_registry can be in a multicall
-        let destination_vaults: Vec<Address> = autopool_contract
-            .call_builder(&IMinimalAutoPool::getDestinationsCall {})
-            .call()
-            .await?;
+            let mut multicall3_contract = Contract::preflight(multicall3, &mut env);
 
-        let base_asset: Address = autopool_contract
-            .call_builder(&IMinimalAutoPool::assetCall {})
-            .call()
-            .await?;
+            let results: Vec<IMulticall3::Result> = multicall3_contract
+                .call_builder(&IMulticall3::aggregate3Call { calls })
+                .call_with_prefetch()
+                .await?
+                .into();
 
-        let system_registry: Address = autopool_contract
-            .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
-            .call()
-            .await?;
+            let destination_vaults: Vec<Address> =
+                IMinimalAutoPool::getDestinationsCall::abi_decode_returns(&results[0].returnData)?;
+            let base_asset: Address =
+                IMinimalAutoPool::assetCall::abi_decode_returns(&results[1].returnData)?;
+            let system_registry: Address =
+                IMinimalAutoPool::getSystemRegistryCall::abi_decode_returns(
+                    &results[2].returnData,
+                )?;
+
+            (destination_vaults, base_asset, system_registry)
+        };
 
         let mut system_registry_contract = Contract::preflight(system_registry, &mut env);
 
         let root_price_oracle: Address = system_registry_contract
             .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
-            .call()
+            .call_with_prefetch()
             .await?;
         (
             destination_vaults,
@@ -162,7 +154,7 @@ pub async fn preflight_autopool_constants(
         let mut multicall3_contract = Contract::preflight(multicall3, &mut env);
         let results: Vec<IMulticall3::Result> = multicall3_contract
             .call_builder(&IMulticall3::aggregate3Call { calls })
-            .call()
+            .call_with_prefetch()
             .await?
             .into();
 
@@ -176,7 +168,8 @@ pub async fn preflight_autopool_constants(
                 let pool: Address = IMinimalDestinationVault::getPoolCall::abi_decode_returns(
                     &pool_result.returnData,
                 )?
-                .into(); // maybe abi_decode_returns
+                .into();
+
                 let token: Address = IMinimalDestinationVault::underlyingCall::abi_decode_returns(
                     &underlying_result.returnData,
                 )?
@@ -189,6 +182,7 @@ pub async fn preflight_autopool_constants(
                     destinationVault: *destination_vault,
                 });
             }
+
             destination_vault_keys
         };
 
@@ -206,140 +200,3 @@ pub async fn preflight_autopool_constants(
     let input = env.into_input().await?;
     Ok((input, autopool_address_constants))
 }
-
-// fn assert_same_keys(
-//     a: &[DestinationVaultKey],
-//     b: &[DestinationVaultKey],
-// ) -> anyhow::Result<()> {
-//     if a.len() != b.len() {
-//         bail!("len mismatch: a={} b={}", a.len(), b.len());
-//     }
-
-//     for (i, (ka, kb)) in a.iter().zip(b.iter()).enumerate() {
-//         if ka != kb {
-//             // `DestinationVaultKey` from sol! usually derives PartialEq if you used all_derives
-//             return Err(anyhow!(
-//                 "mismatch at index {i}\n  a={:?}\n  b={:?}",
-//                 ka,
-//                 kb
-//             ));
-//         }
-//     }
-
-//     Ok(())
-// }
-
-// let mut secondary_destination_vault_keys: Vec<DestinationVaultKey>  =  Vec::with_capacity(destination_vaults.len());
-// for dv in destination_vaults {
-//     let (token, pool) = {
-//         let mut destination_vault_contract = Contract::preflight(dv, &mut env);
-
-//         let token: Address = destination_vault_contract
-//             .call_builder(&IMinimalDestinationVault::underlyingCall {})
-//             .call()
-//             .await?;
-
-//         let pool: Address = destination_vault_contract
-//             .call_builder(&IMinimalDestinationVault::getPoolCall {})
-//             .call()
-//             .await?;
-
-//         (token, pool)
-//     };
-
-//     secondary_destination_vault_keys.push(DestinationVaultKey {
-//         token: token,
-//         pool: pool,
-//         baseAsset: base_asset,
-//         destinationVault: dv,
-//     });
-// }
-
-// assert_same_keys(&destination_vault_keys, &secondary_destination_vault_keys)?;
-
-// pub async fn _preflight_prices2(
-//     autopool_constants: &AutopoolAddressConstants,
-//     multicall3: &Address,
-//     provider: RootProvider,
-//     block: u64,
-// ) -> Result<EthEvmInput, anyhow::Error> {
-//     let mut env = EthEvmEnv::builder()
-//             .provider(provider)
-//             .block_number(block)
-//             .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-//             .build()
-//             .await?;
-
-//     let mut price_calls: Vec<Call3> = Vec::with_capacity(&autopool_constants.destinationVaultKeys.len());
-
-//     {
-//         for key in &autopool_constants.destinationVaultKeys {
-//             {
-//                 let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
-//                     IMinimalRootPriceOracle::getRangePricesLPCall {
-//                         lpToken: key.token,
-//                         pool: key.pool,
-//                         quoteToken: key.baseAsset,
-//                     };
-
-//                 let price_call = Call3 {
-//                     target: autopool_constants.rootPriceOracle,
-//                     allowFailure: false,
-//                     callData: get_range_prices_lp_call.abi_encode(), // selector + args
-//                 };
-
-//                 price_calls.push(price_call);
-
-//             }
-//     }
-
-//     let mut multicall_contract = Contract::preflight(multicall3, &mut env);
-
-//     let _results: Vec<IMulticall3::Result> = multicall_contract
-//         .call_builder(&IMulticall3::aggregate3Call { calls })
-//         .call()
-//         .await?
-//         .into();
-
-//     let input = env.into_input().await?;
-//     Ok(input)
-// }
-// }
-
-
-
-// pub async fn preflight_prices_old(
-//     autopool_constants: &AutopoolAddressConstants,
-//     provider: RootProvider,
-//     block: u64,
-// ) -> Result<EthEvmInput, anyhow::Error> {
-//     let mut env = EthEvmEnv::builder()
-//         .provider(provider)
-//         .block_number(block)
-//         .chain_spec(&ETH_MAINNET_CHAIN_SPEC)
-//         .build()
-//         .await?;
-
-//     for key in &autopool_constants.destinationVaultKeys {
-//         {
-//             let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
-//                 IMinimalRootPriceOracle::getRangePricesLPCall {
-//                     lpToken: key.token,
-//                     pool: key.pool,
-//                     quoteToken: key.baseAsset,
-//                 };
-
-//             let mut root_price_oracle_contract =
-//                 Contract::preflight(autopool_constants.rootPriceOracle, &mut env);
-
-//             let (_spot_price_in_quote, _safe_price_in_quote, _is_spot_safe): (U256, U256, bool) =
-//                 root_price_oracle_contract
-//                     .call_builder(&get_range_prices_lp_call)
-//                     .call_with_prefetch()
-//                     .await?
-//                     .into();
-//         };
-//     }
-//     let input = env.into_input().await?;
-//     Ok(input)
-// }

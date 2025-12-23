@@ -33,11 +33,9 @@ sol! {
         function rootPriceOracle() external view returns (address rootPriceOracle_);
     }
 
-    // source
-    // https://vscode.blockscan.com/ethereum/0xcA11bde05977b3631167028862bE2a173976CA11
+    // source  https://vscode.blockscan.com/ethereum/0xcA11bde05977b3631167028862bE2a173976CA11
 
     interface IMulticall3 {
-
         struct Call3 {
             address target;
             bool allowFailure;
