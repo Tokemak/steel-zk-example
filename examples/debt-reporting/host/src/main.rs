@@ -40,29 +40,34 @@ async fn main() -> Result<()> {
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
     // autoETH  note: wstETH destination is broken
     let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56");
+    let multicall3: Address = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
+
     // let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
     let latest = provider.get_block_number().await?;
     println!("Starting Address Preflight");
     let t = Instant::now();
     let (autopool_constants_input, autopool_constants) =
-        preflight_autopool_constants(autopool, provider.clone(), latest).await?;
+        preflight_autopool_constants(autopool, multicall3, provider.clone(), latest).await?;
     println!("Finished Address Preflight in {:?}", t.elapsed());
     let autopool_constants = Arc::new(autopool_constants);
 
-    let historical_blocks: Vec<u64> = (0..100).map(|i| latest - i).collect();
+    // note use some pseudo randomness here
+    let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
     let mut set = JoinSet::new();
     let t = Instant::now();
-    
-    println!("Starting {:?} blocks Prices Preflight", ( historical_blocks.len() as u64));
-    
+
+    println!(
+        "Starting {:?} blocks Prices Preflight",
+        (historical_blocks.len() as u64)
+    );
 
     for block in historical_blocks {
         let provider = provider.clone();
         let autopool_constants = autopool_constants.clone();
+        let multicall3 = multicall3.clone(); // not certain here if we need to clone it
         set.spawn(async move {
-            let input = preflight_prices(&autopool_constants, provider, block).await?;
+            let input = preflight_prices(&autopool_constants, multicall3, provider, block).await?;
             Ok::<EthEvmInput, anyhow::Error>(input)
-
         });
     }
 

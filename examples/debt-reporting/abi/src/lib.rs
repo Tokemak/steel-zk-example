@@ -14,34 +14,50 @@ sol! {
             returns (uint256 spotPriceInQuote, uint256 safePriceInQuote, bool isSpotSafe);
     }
 
-    /// Minimal interface for an Autopool.
-    interface IMinimalAutoPool {
+    interface IMinimalAutoPool { // capitalized
         function getSystemRegistry() external view returns (address systemRegistry);
 
         function getDestinations() external view returns (address[] memory _destinations);
 
-        /// Base asset of the Autopool.
         function asset() external view returns (address pool);
     }
 
     interface IMinimalDestinationVault {
-        /// Underlying pool
         function getPool() external view returns (address pool);
 
-        /// LP token for this destination vault. Often the same as the pool
+        // LP token for this destination vault. Often the same as the pool
         function underlying() external view returns (address underlying);
     }
-// TODO clean up these interfaces
+
     interface IMinimalSystemRegistry {
         function rootPriceOracle() external view returns (address rootPriceOracle_);
+    }
+
+    // source  https://vscode.blockscan.com/ethereum/0xcA11bde05977b3631167028862bE2a173976CA11
+
+    interface IMulticall3 {
+        struct Call3 {
+            address target;
+            bool allowFailure;
+            bytes callData;
+        }
+
+        struct Result {
+            bool success;
+            bytes returnData;
+        }
+
+        function aggregate3(Call3[] calldata calls)
+            external
+            payable
+            returns (Result[] memory returnData);
     }
 }
 
 sol! {
     #![sol(all_derives)]
     #![sol(extra_derives(serde::Serialize, serde::Deserialize))]
-    // can we store this as a sha256(token, pool, baseAsset, destinationVault) instead?
-    // so we are writing one slot instead of 4?
+
     struct DestinationVaultKey {
         address token;
         address pool;
@@ -75,11 +91,11 @@ sol! {
     }
 }
 
+// required for the BTreeSet and BTreeMap
 impl Ord for DestinationVaultKey {
-    // required for the BTreeSet and BTreeMap
     fn cmp(&self, other: &Self) -> Ordering {
         (self.token, self.pool, self.baseAsset, self.destinationVault).cmp(&(
-            other.token,
+            other.token, // todo rename to underlying
             other.pool,
             other.baseAsset,
             other.destinationVault,
