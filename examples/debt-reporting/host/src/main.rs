@@ -4,7 +4,9 @@ use preflight::{preflight_autopool_constants, preflight_prices};
 mod push_prices_onchain;
 use push_prices_onchain::stub_post_commitment_onchain;
 
-use alloy_primitives::{address, Address};
+use debt_reporting_abi::ChainAddressConstants;
+
+use alloy_primitives::address;
 use alloy_sol_types::SolValue;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -29,6 +31,28 @@ struct Args {
     beacon_api_url: Url,
 }
 
+fn stub_read_cli_args() -> ChainAddressConstants {
+    let system_registry = address!("0x2218f90a98b0c070676f249ef44834686daa4285");
+    let root_price_oracle = address!("0x61f8be7fd721e80c0249829eae6f0daf21bc2cac");
+    let multicall3 = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
+
+    let autopools = vec![
+        address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
+        address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
+        address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
+        address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
+        address!("0x52F0D57Fb5D4780a37164f918746f9BD51c684a3"), // siloETH
+        address!("0x408b6A3E2Daf288864968454AAe786a2A042Df36"), // siloUSD
+    ];
+
+    ChainAddressConstants {
+        multicall3: multicall3,
+        systemRegistry: system_registry,
+        rootPriceOracle: root_price_oracle,
+        autopools: autopools,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let full_start = Instant::now();
@@ -37,63 +61,70 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
+    let chain_address_constants: ChainAddressConstants = stub_read_cli_args();
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
-    // autoETH  note: wstETH destination is broken
-    let autopool: Address = address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56");
-    let multicall3: Address = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
 
-    // let autopool: Address = address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"); // autoUSD
     let latest = provider.get_block_number().await?;
-    println!("Starting Address Preflight");
+    println!("Starting Destination Vault Keys Preflight");
     let t = Instant::now();
-    let (autopool_constants_input, autopool_constants) =
-        preflight_autopool_constants(autopool, multicall3, provider.clone(), latest).await?;
-    println!("Finished Address Preflight in {:?}", t.elapsed());
-    let autopool_constants = Arc::new(autopool_constants);
-
-    // note use some pseudo randomness here
-    let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
-    let mut set = JoinSet::new();
-    let t = Instant::now();
+    let (destination_vault_keys_input, destination_vault_keys) =
+        preflight_autopool_constants(chain_address_constants.clone(), provider.clone(), latest)
+            .await?;
 
     println!(
-        "Starting {:?} blocks Prices Preflight",
-        (historical_blocks.len() as u64)
+        "Finished Destination Vault Keys Preflight in {:?} found {:?} unique destinations",
+        t.elapsed(),
+        (destination_vault_keys.len() as u64)
     );
+    let input_vector = {
+        let historical_blocks: Vec<u64> = (0..3).map(|i| latest - i).collect();
+        let mut set = JoinSet::new();
+        let t = Instant::now();
 
-    for block in historical_blocks {
-        let provider = provider.clone();
-        let autopool_constants = autopool_constants.clone();
-        let multicall3 = multicall3.clone(); // not certain here if we need to clone it
-        set.spawn(async move {
-            let input = preflight_prices(&autopool_constants, multicall3, provider, block).await?;
-            Ok::<EthEvmInput, anyhow::Error>(input)
-        });
-    }
+        let destination_vault_keys = Arc::new(destination_vault_keys); // needed to use in threads, not sure why
+        println!(
+            "Starting {:?} blocks Prices Preflight",
+            (historical_blocks.len() as u64)
+        );
 
-    let mut inputs_as_vector = Vec::new();
-    inputs_as_vector.push(autopool_constants_input);
-    while let Some(res) = set.join_next().await {
-        let input = res??;
-        inputs_as_vector.push(input);
-        // 70ish seconds for autoETH per block
-        // can put a progress bar here if inclined
-    }
+        for block in historical_blocks {
+            let provider = provider.clone();
+            let chain_address_constants = chain_address_constants.clone();
+            let destination_vault_keys = destination_vault_keys.clone().to_vec();
+            set.spawn(async move {
+                let input = preflight_prices(
+                    chain_address_constants,
+                    destination_vault_keys,
+                    provider,
+                    block,
+                )
+                .await?;
+                Ok::<EthEvmInput, anyhow::Error>(input)
+            });
+        }
 
-    println!("Finished Prices Preflight in {:?}", t.elapsed());
+        let mut input_vector = Vec::new();
+        input_vector.push(destination_vault_keys_input);
+
+        while let Some(res) = set.join_next().await {
+            let prices_input = res??;
+            input_vector.push(prices_input);
+        }
+        println!("Finished Prices Preflight in {:?}", t.elapsed());
+        input_vector
+    };
 
     let destinations_zk_prices_commitment = {
         println!("Starting Guest!");
         let t = Instant::now();
         let session_info = {
             let mut builder = ExecutorEnv::builder();
-
             builder
-                .write(&autopool)
+                .write(&chain_address_constants)
                 .context("Failed to write autopool Address")?;
 
             builder
-                .write(&inputs_as_vector)
+                .write(&input_vector)
                 .context("Failed to write input envs")?;
 
             let env = builder.build().context("failed to build executor env")?;
@@ -111,7 +142,6 @@ async fn main() -> Result<()> {
     };
 
     stub_post_commitment_onchain(destinations_zk_prices_commitment);
-
     println!("End to end {:?}", full_start.elapsed());
     Ok(())
 }

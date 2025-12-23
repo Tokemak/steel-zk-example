@@ -1,39 +1,37 @@
 use debt_reporting_abi::DestinationsZKPricesCommitment;
 
 pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
-    println!("Stub for submitting a transaction to validate debt reporting\n");
+    println!("\n=== Stub: Submit Debt Reporting Commitment ===\n");
 
-    // High-level summary
-    println!("Commitment: {:#?}", c.commitment);
-
-    let ac = &c.autopoolConstants;
-    println!("Autopool constants:");
-    println!("  autopool:       {:?}", ac.autopool);
-    println!("  systemRegistry: {:?}", ac.systemRegistry);
-    println!("  rootPriceOracle:{:?}", ac.rootPriceOracle);
-    println!("  baseAsset:      {:?}", ac.baseAsset);
-    println!("  destinationVaultKeys: {}", ac.destinationVaultKeys.len());
-    println!("  priceInfo rows:        {}", c.priceInfo.len());
+    // Commitment header
+    println!("Commitment:");
+    println!("  {:?}", c.commitment);
     println!();
 
-    // Table header
-    println!(
-        "{:<4} {:<42} {:>24} {:>24} {:<10}",
-        "idx", "destinationVault", "avgSpot", "latestSafe", "spotSafe?"
-    );
-    println!("{}", "-".repeat(240));
+    println!("Price Info ({} entries):", c.priceInfo.len());
+    println!("---------------------------------------------");
 
-    // Rows
-    for (i, (key, price)) in c.priceInfo.iter().enumerate() {
+    for (i, (key, computed)) in c.priceInfo.iter().enumerate() {
+        println!("Entry #{i}");
+        println!("  DestinationVaultKey:");
+        println!("    token:              {:?}", key.token);
+        println!("    pool:               {:?}", key.pool);
+        println!("    baseAsset:          {:?}", key.baseAsset);
+        println!("    destinationVault:   {:?}", key.destinationVault);
+
+        println!("  ComputedGetRangePriceLP:");
         println!(
-            "{:<4} {:<42} {:>24} {:>24} {:<10}",
-            i,
-            format!("{:?}", key.destinationVault),
-            price.averageSpotPriceInQuote,
-            price.latestSafePriceInQuote,
-            price.isSpotSafeZK,
+            "    averageSpotPriceInQuote: {}",
+            computed.averageSpotPriceInQuote
         );
+        println!(
+            "    latestSafePriceInQuote:  {}",
+            computed.latestSafePriceInQuote
+        );
+        println!("    isSpotSafeZK:            {}", computed.isSpotSafeZK);
+
+        println!("---------------------------------------------");
     }
 
-    println!("\n(Stub) would now build + send tx with proof + commitment payload...");
+    println!("End commitment stub\n");
 }

@@ -61,21 +61,15 @@ sol! {
     struct DestinationVaultKey {
         address token;
         address pool;
-        address baseAsset; // redundent
+        address baseAsset;
         address destinationVault;
     }
 
-    struct AutopoolAddressConstants {
-        address autopool;
+    struct ChainAddressConstants {
+        address multicall3;
         address systemRegistry;
         address rootPriceOracle;
-        address baseAsset; // is redundent, don't worry about for now
-        DestinationVaultKey[] destinationVaultKeys;
-    }
-
-    struct AutopoolAddressConstantsCommitment {
-        Commitment commitment;
-        AutopoolAddressConstants autopoolConstants;
+        address[] autopools;
     }
 
     struct ComputedGetRangePriceLP{
@@ -84,9 +78,15 @@ sol! {
         bool isSpotSafeZK;
     }
 
+    // TODO swithc to using the packed version to save gas
+    struct PackedComputedGetRangePriceLP{
+        uint112 averageSpotPriceInQuote;
+        uint112 latestSafePriceInQuote;
+        uint8 isSpotSafeZK;
+    }
+
     struct DestinationsZKPricesCommitment {
         Commitment commitment;
-        AutopoolAddressConstants autopoolConstants;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo;
     }
 }
