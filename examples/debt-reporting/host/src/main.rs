@@ -42,6 +42,8 @@ async fn main() -> Result<()> {
     let autopools = vec![
         address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
         address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
+        address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
+        address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
     ];
     let multicall3: Address = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
 

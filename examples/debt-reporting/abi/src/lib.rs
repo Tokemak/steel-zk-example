@@ -86,7 +86,7 @@ sol! {
 
     struct DestinationsZKPricesCommitment {
         Commitment commitment;
-        AutopoolAddressConstants autopoolConstants;
+        AutopoolAddressConstants[] allAutopoolConstants;
         (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo;
     }
 }

@@ -59,15 +59,16 @@ fn main() {
     let autopools: Vec<Address> = env::read();
     let several_inputs: Vec<EthEvmInput> = env::read();
     let num_blocks_sampled = (several_inputs.len() as u64) - 1; // 2 envs for the first block, one for constants and one for prices
-    
+
     let mut iter = several_inputs.into_iter();
     let autopool_constants_input: EthEvmInput = iter.next().expect("need at least one EthEvmInput");
     let autopool_constants_env = autopool_constants_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
     let constants_block_number = autopool_constants_env.header().number;
 
     let all_autopool_constants = {
-    let mut all_autopool_constants = Vec<AutopoolAddressConstants> = Vec::with_capacity(autopools.len());    
-    for autopool in autopools {
+        let mut all_autopool_constants: Vec<AutopoolAddressConstants> =
+            Vec::with_capacity(autopools.len());
+        for autopool in autopools {
             let autopool_constants = {
                 let autopool_contract = Contract::new(autopool, &autopool_constants_env);
                 let destination_vaults: Vec<Address> = autopool_contract
@@ -79,7 +80,8 @@ fn main() {
                 let system_registry: Address = autopool_contract
                     .call_builder(&IMinimalAutoPool::getSystemRegistryCall {})
                     .call();
-                let system_registry_contract = Contract::new(system_registry, &autopool_constants_env);
+                let system_registry_contract =
+                    Contract::new(system_registry, &autopool_constants_env);
                 let root_price_oracle: Address = system_registry_contract
                     .call_builder(&IMinimalSystemRegistry::rootPriceOracleCall {})
                     .call();
@@ -112,11 +114,10 @@ fn main() {
                 }
             };
             all_autopool_constants.push(autopool_constants);
-        };
+        }
         all_autopool_constants
     };
 
-    
     let (latest_block_safe_prices, unsafe_spot_prices_destinations, all_spot_prices_instances) = {
         let mut latest_block_safe_prices: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
         let mut unsafe_spot_prices_destinations: BTreeSet<DestinationVaultKey> = BTreeSet::new();
@@ -125,30 +126,36 @@ fn main() {
         for prices_input in iter {
             let prices_env = prices_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
             let prices_block_number = prices_env.header().number;
-            for key in &autopool_constants.destinationVaultKeys {
-                let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
-                    IMinimalRootPriceOracle::getRangePricesLPCall {
-                        lpToken: key.token,
-                        pool: key.pool,
-                        quoteToken: key.baseAsset,
-                    };
 
-                let root_price_oracle_contract =
-                    Contract::new(autopool_constants.rootPriceOracle.clone(), &prices_env);
-                let (spot_price_in_quote, safe_price_in_quote, is_spot_safe): (U256, U256, bool) =
-                    root_price_oracle_contract
+            for autopool_constants in &all_autopool_constants {
+                for key in &autopool_constants.destinationVaultKeys {
+                    let get_range_prices_lp_call: IMinimalRootPriceOracle::getRangePricesLPCall =
+                        IMinimalRootPriceOracle::getRangePricesLPCall {
+                            lpToken: key.token,
+                            pool: key.pool,
+                            quoteToken: key.baseAsset,
+                        };
+
+                    let root_price_oracle_contract =
+                        Contract::new(autopool_constants.rootPriceOracle.clone(), &prices_env);
+                    let (spot_price_in_quote, safe_price_in_quote, is_spot_safe): (
+                        U256,
+                        U256,
+                        bool,
+                    ) = root_price_oracle_contract
                         .call_builder(&get_range_prices_lp_call)
                         .call()
                         .into();
 
-                if prices_block_number == constants_block_number {
-                    latest_block_safe_prices.insert(key.clone(), safe_price_in_quote);
-                }
+                    if prices_block_number == constants_block_number {
+                        latest_block_safe_prices.insert(key.clone(), safe_price_in_quote);
+                    }
 
-                if !is_spot_safe {
-                    unsafe_spot_prices_destinations.insert(key.clone());
+                    if !is_spot_safe {
+                        unsafe_spot_prices_destinations.insert(key.clone());
+                    }
+                    all_spot_prices_instances.push((key.clone(), spot_price_in_quote));
                 }
-                all_spot_prices_instances.push((key.clone(), spot_price_in_quote));
             }
         }
         (
@@ -163,33 +170,35 @@ fn main() {
         num_blocks_sampled,
     );
     let mut price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> =
-        Vec::with_capacity(autopool_constants.destinationVaultKeys.len());
+        Vec::new(); // todo maybe size correctly
 
-    for key in &autopool_constants.destinationVaultKeys {
-        let avg_spot: U256 = *key_to_average_spot_price
-            .get(&key)
-            .expect("missing avg spot price for key");
+    for autopool_constants in &all_autopool_constants {
+        for key in &autopool_constants.destinationVaultKeys {
+            let avg_spot: U256 = *key_to_average_spot_price
+                .get(&key)
+                .expect("missing avg spot price for key");
 
-        let latest_safe: U256 = *latest_block_safe_prices
-            .get(&key)
-            .expect("missing latest safe price for key");
+            let latest_safe: U256 = *latest_block_safe_prices
+                .get(&key)
+                .expect("missing latest safe price for key");
 
-        price_info.push((
-            key.clone(),
-            ComputedGetRangePriceLP {
-                averageSpotPriceInQuote: avg_spot,
-                latestSafePriceInQuote: latest_safe,
-                isSpotSafeZK: !unsafe_spot_prices_destinations.contains(&key),
-            },
-        ));
+            price_info.push((
+                key.clone(),
+                ComputedGetRangePriceLP {
+                    averageSpotPriceInQuote: avg_spot,
+                    latestSafePriceInQuote: latest_safe,
+                    isSpotSafeZK: !unsafe_spot_prices_destinations.contains(&key),
+                },
+            ));
+        }
     }
 
     // note need to connect the autopool_constants_env with the prices_env here
 
     let journal = DestinationsZKPricesCommitment {
         commitment: autopool_constants_env.into_commitment(),
-        autopoolConstants: autopool_constants,
-        priceInfo: price_info,
+        allAutopoolConstants: all_autopool_constants,
+        priceInfo: price_info, // big dictionary like entity
     };
 
     env::commit_slice(&journal.abi_encode());
@@ -199,16 +208,15 @@ fn compute_average_spot_price_by_destination_vault(
     all_spot_prices_instances: Vec<(DestinationVaultKey, U256)>,
     expected_count_per_key: u64,
 ) -> BTreeMap<DestinationVaultKey, U256> {
- 
     let expected_count_per_key_u256: U256 = U256::from(expected_count_per_key);
     let mut running_sum_by_key: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
 
     for (destination_vault_key, spot_price_value) in all_spot_prices_instances {
-         let running_sum_for_key: &mut U256 = running_sum_by_key
+        let running_sum_for_key: &mut U256 = running_sum_by_key
             .entry(destination_vault_key)
             .or_insert(U256::ZERO);
 
-         *running_sum_for_key += spot_price_value;
+        *running_sum_for_key += spot_price_value;
     }
 
     let average_price_by_key: Vec<(DestinationVaultKey, U256)> = running_sum_by_key
