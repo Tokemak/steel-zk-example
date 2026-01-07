@@ -78,7 +78,6 @@ sol! {
         bool isSpotSafeZK;
     }
 
-    // TODO swithc to using the packed version to save gas
     struct PackedComputedGetRangePriceLP{
         uint112 averageSpotPriceInQuote;
         uint112 latestSafePriceInQuote;
@@ -87,7 +86,7 @@ sol! {
 
     struct DestinationsZKPricesCommitment {
         Commitment commitment;
-        (DestinationVaultKey, ComputedGetRangePriceLP)[] priceInfo;
+        (address, PackedComputedGetRangePriceLP)[] priceInfo; // destination_vault_address, prices
     }
 }
 

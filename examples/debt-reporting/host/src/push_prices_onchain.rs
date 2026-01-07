@@ -11,14 +11,12 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
     println!("Price Info ({} entries):", c.priceInfo.len());
     println!("---------------------------------------------");
 
-    for (i, (key, computed)) in c.priceInfo.iter().enumerate() {
+    for (i, (destination_vault_address, computed)) in c.priceInfo.iter().enumerate() {
         println!("Entry #{i}");
-        println!("  DestinationVaultKey:");
-        println!("    token:              {:?}", key.token);
-        println!("    pool:               {:?}", key.pool);
-        println!("    baseAsset:          {:?}", key.baseAsset);
-        println!("    destinationVault:   {:?}", key.destinationVault);
-
+        println!(
+            "    destination_vault_address:              {:?}",
+            destination_vault_address
+        );
         println!("  ComputedGetRangePriceLP:");
         println!(
             "    averageSpotPriceInQuote: {}",

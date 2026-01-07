@@ -21,13 +21,16 @@ extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{
+    aliases::{U112},
+    ruint::UintTryFrom,
+    Address, U256,
+};
 use alloy_sol_types::SolValue;
 
 use debt_reporting_abi::{
-    ChainAddressConstants, ComputedGetRangePriceLP, DestinationVaultKey,
-    DestinationsZKPricesCommitment, IMinimalAutoPool, IMinimalDestinationVault,
-    IMinimalRootPriceOracle,
+    ChainAddressConstants, DestinationVaultKey, DestinationsZKPricesCommitment, IMinimalAutoPool,
+    IMinimalDestinationVault, IMinimalRootPriceOracle, PackedComputedGetRangePriceLP,
 };
 use risc0_steel::{
     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
@@ -129,10 +132,6 @@ fn main() {
                         quoteToken: key.baseAsset,
                     };
 
-                // // do I have to make a new contract every time?
-                // let root_price_oracle_contract =
-                //     Contract::new(autopool_constants.rootPriceOracle.clone(), &prices_env);
-
                 let (spot_price_in_quote, safe_price_in_quote, is_spot_safe): (U256, U256, bool) =
                     root_price_oracle_contract
                         .call_builder(&get_range_prices_lp_call)
@@ -145,10 +144,8 @@ fn main() {
                 }
 
                 if !is_spot_safe {
-                    // if spot price is not safe, remember it
                     unsafe_spot_prices_destinations.insert(key.clone());
                 }
-                // safe *all* the spot prices to later average
                 all_spot_prices_instances.push((key.clone(), spot_price_in_quote));
             }
         }
@@ -161,39 +158,21 @@ fn main() {
     };
 
     let key_to_average_spot_price = compute_average_spot_price_by_destination_vault(
-        all_spot_prices_instances,
+        all_spot_prices_instances, // good to consume this here
         num_blocks_sampled,
     );
 
     let price_info = {
-        let mut price_info: Vec<(DestinationVaultKey, ComputedGetRangePriceLP)> = Vec::new();
+        let mut price_info: Vec<(Address, PackedComputedGetRangePriceLP)> = Vec::new();
 
         for key in &destination_vault_keys {
-            // not sure if i should use panic here,
-            let avg_spot: U256 = *key_to_average_spot_price.get(&key).unwrap_or_else(|| {
-                panic!(
-                    "missing average spot price for destination vault key {:?}",
-                    key
-                )
-            });
-
-            let latest_safe: U256 = *latest_block_safe_prices.get(&key).unwrap_or_else(|| {
-                panic!(
-                    "missing latest safe price for destination vault key {:?}",
-                    key
-                )
-            });
-
-            let found_at_least_one_unsafe_price = unsafe_spot_prices_destinations.contains(&key);
-
-            let key_price_tuple = (
-                key.clone(),
-                ComputedGetRangePriceLP {
-                    averageSpotPriceInQuote: avg_spot,
-                    latestSafePriceInQuote: latest_safe,
-                    isSpotSafeZK: !found_at_least_one_unsafe_price,
-                },
+            let packed = build_PackedComputedGetRangePriceLP(
+                &key,
+                &key_to_average_spot_price,
+                &latest_block_safe_prices,
+                &unsafe_spot_prices_destinations,
             );
+            let key_price_tuple = (key.destinationVault, packed);
 
             price_info.push(key_price_tuple);
         }
@@ -201,7 +180,6 @@ fn main() {
     };
 
     // note need to connect the autopool_constants_env with the prices_env here
-
     let journal = DestinationsZKPricesCommitment {
         commitment: destination_vault_keys_env.into_commitment(),
         priceInfo: price_info, // treated like a dictionary
@@ -210,6 +188,60 @@ fn main() {
     env::commit_slice(&journal.abi_encode());
 }
 
+fn build_PackedComputedGetRangePriceLP(
+    key: &DestinationVaultKey,
+    key_to_average_spot_price: &BTreeMap<DestinationVaultKey, U256>,
+    latest_block_safe_prices: &BTreeMap<DestinationVaultKey, U256>,
+    unsafe_spot_prices_destinations: &BTreeSet<DestinationVaultKey>,
+) -> PackedComputedGetRangePriceLP {
+    /*
+
+    returns the packed (u112,u112,u8) version of the safe, spot price, 
+
+    if any of the spot prices are not safe or they are to large to fit in a u112, then
+    the spot price is safe is set to false
+    
+    I don't expect this case, so maybe don't commit them? just skip them, not sure on right path
+
+
+     */
+     let avg_spot_u256: U256 = *key_to_average_spot_price.get(key).unwrap_or_else(|| {
+        panic!(
+            "missing average spot price for destination vault key {:?}",
+            key
+        )
+    });
+
+    let latest_safe_u256: U256 = *latest_block_safe_prices.get(key).unwrap_or_else(|| {
+        panic!(
+            "missing latest safe price for destination vault key {:?}",
+            key
+        )
+    });
+
+    let avg_spot_try: Result<U112, _> = U112::uint_try_from(avg_spot_u256);
+    let latest_safe_try: Result<U112, _> = U112::uint_try_from(latest_safe_u256);
+
+    // The fall back values here should not be used maybe include checks for is 0 in the executor contract?
+    // skip values of spot and safe price 0?
+    // maybe don't even include them in the commimtment?
+    // do both?
+    let avg_spot_u112: U112 = avg_spot_try.unwrap_or(U112::from(0u8));
+    let latest_safe_u112: U112 = latest_safe_try.unwrap_or(U112::from(0u8));
+
+    let cant_convert_too_big = avg_spot_try.is_err() || latest_safe_try.is_err();
+    let all_spot_prices_are_safe = !unsafe_spot_prices_destinations.contains(key);
+    let is_spot_safe = (all_spot_prices_are_safe & !cant_convert_too_big) as u8;
+
+    let packed = PackedComputedGetRangePriceLP {
+        averageSpotPriceInQuote: avg_spot_u112,
+        latestSafePriceInQuote: latest_safe_u112,
+        isSpotSafeZK: is_spot_safe,
+    };
+    packed
+}
+
+// go through again for clarity, rewrite
 fn compute_average_spot_price_by_destination_vault(
     all_spot_prices_instances: Vec<(DestinationVaultKey, U256)>,
     expected_count_per_key: u64,
