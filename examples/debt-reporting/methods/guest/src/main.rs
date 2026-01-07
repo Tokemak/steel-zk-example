@@ -64,7 +64,10 @@ there are issues with telling the complier the type of`some_input.into_env(&ETH_
 //     println!("In Guest, placeholder to validate that the ChainAddressConstants are correct");
 // }
 
+
+
 fn main() {
+    // TODO figure out how to pass an env to a seperate function for clarity
     let chain_address_constants: ChainAddressConstants = env::read();
     let preflighted_inputs: Vec<EthEvmInput> = env::read();
     // 2 envs for the first block, one was used to get all the destination addreses the other was used for prices
@@ -158,7 +161,7 @@ fn main() {
     };
 
     let key_to_average_spot_price = compute_average_spot_price_by_destination_vault(
-        all_spot_prices_instances, // good to consume this here
+        all_spot_prices_instances,
         num_blocks_sampled,
     );
 
@@ -195,16 +198,15 @@ fn build_PackedComputedGetRangePriceLP(
     unsafe_spot_prices_destinations: &BTreeSet<DestinationVaultKey>,
 ) -> PackedComputedGetRangePriceLP {
     /*
-
-    returns the packed (u112,u112,u8) version of the safe, spot price, 
+    Returns the packed (u112,u112,u8) version of the safe, spot price, 
 
     if any of the spot prices are not safe or they are to large to fit in a u112, then
     the spot price is safe is set to false
     
-    I don't expect this case, so maybe don't commit them? just skip them, not sure on right path
+    I don't expect to ever overflow, not sure on the right path to take for when that occurs. 
+    don't want to panic because that breaks the whole debt reporting
+    */
 
-
-     */
      let avg_spot_u256: U256 = *key_to_average_spot_price.get(key).unwrap_or_else(|| {
         panic!(
             "missing average spot price for destination vault key {:?}",
@@ -222,10 +224,6 @@ fn build_PackedComputedGetRangePriceLP(
     let avg_spot_try: Result<U112, _> = U112::uint_try_from(avg_spot_u256);
     let latest_safe_try: Result<U112, _> = U112::uint_try_from(latest_safe_u256);
 
-    // The fall back values here should not be used maybe include checks for is 0 in the executor contract?
-    // skip values of spot and safe price 0?
-    // maybe don't even include them in the commimtment?
-    // do both?
     let avg_spot_u112: U112 = avg_spot_try.unwrap_or(U112::from(0u8));
     let latest_safe_u112: U112 = latest_safe_try.unwrap_or(U112::from(0u8));
 
@@ -244,7 +242,7 @@ fn build_PackedComputedGetRangePriceLP(
 // go through again for clarity, rewrite
 fn compute_average_spot_price_by_destination_vault(
     all_spot_prices_instances: Vec<(DestinationVaultKey, U256)>,
-    expected_count_per_key: u64,
+    expected_count_per_key: u64, // number of blocks
 ) -> BTreeMap<DestinationVaultKey, U256> {
     let expected_count_per_key_u256: U256 = U256::from(expected_count_per_key);
     let mut running_sum_by_key: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
