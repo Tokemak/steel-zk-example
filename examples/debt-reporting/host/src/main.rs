@@ -29,21 +29,29 @@ struct Args {
     rpc_url: Url,
     #[arg(long, env = "BEACON_API_URL")]
     beacon_api_url: Url,
+    #[arg(long, env = "ALL_AUTOPOOLS")]
+    all_autopools: bool,
 }
 
-fn stub_read_cli_args() -> ChainAddressConstants {
+fn stub_read_cli_args(all_autopools: bool) -> ChainAddressConstants {
     let system_registry = address!("0x2218f90a98b0c070676f249ef44834686daa4285");
     let root_price_oracle = address!("0x61f8be7fd721e80c0249829eae6f0daf21bc2cac");
     let multicall3 = address!("0xcA11bde05977b3631167028862bE2a173976CA11");
 
-    let autopools = vec![
-        address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
-        address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
-        address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
-        address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
-        address!("0x52F0D57Fb5D4780a37164f918746f9BD51c684a3"), // siloETH
-        address!("0x408b6A3E2Daf288864968454AAe786a2A042Df36"), // siloUSD
-    ];
+    let autopools = if all_autopools {
+        vec![
+            address!("0x0A2b94F6871c1D7A32Fe58E1ab5e6deA2f114E56"), // autoETH
+            address!("0xa7569A44f348d3D70d8ad5889e50F78E33d80D35"), // autoUSD
+            address!("0x1ABD0403591bE494771115d74ED9E120530f356E"), // anchrgUSD
+            address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // autoDOLA
+            address!("0x52F0D57Fb5D4780a37164f918746f9BD51c684a3"), // siloETH
+            address!("0x408b6A3E2Daf288864968454AAe786a2A042Df36"), // siloUSD
+        ]
+    } else {
+        vec![
+            address!("0x79eB84B5E30Ef2481c8f00fD0Aa7aAd6Ac0AA54d"), // only auto DOLA
+        ]
+    };
 
     ChainAddressConstants {
         multicall3: multicall3,
@@ -61,11 +69,15 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     let args = Args::parse();
-    let chain_address_constants: ChainAddressConstants = stub_read_cli_args();
+    let chain_address_constants: ChainAddressConstants = stub_read_cli_args(args.all_autopools);
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
 
     let latest = provider.get_block_number().await?;
     println!("Starting Destination Vault Keys Preflight");
+    println!(
+        "Number of autopools {:?}",
+        (chain_address_constants.autopools.len() as u64)
+    );
     let t = Instant::now();
     let (destination_vault_keys_input, destination_vault_keys) =
         preflight_autopool_constants(chain_address_constants.clone(), provider.clone(), latest)

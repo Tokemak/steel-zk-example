@@ -20,7 +20,6 @@ use risc0_steel::{
 // this uses multicall while the guest uses naive seqential logic, not certain on if I want it to be like that
 // the guest is determanistic, and makes no external calls so it is not faster to use multicall
 
-
 pub async fn preflight_autopool_constants(
     chain_address_constants: ChainAddressConstants,
     provider: RootProvider,
