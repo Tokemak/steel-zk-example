@@ -15,6 +15,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pragma solidity ^0.8.20;
+
 import {Steel} from "contracts/src/Steel.sol";
 
 interface IZKExecutor {
@@ -32,7 +33,7 @@ interface IZKExecutor {
         bool isSpotSafeZK;
     }
 
-    struct PriceInfo {  
+    struct PriceInfo {
         address destinationVaultAddress;
         uint256 packedPrices;
     }
@@ -40,9 +41,8 @@ interface IZKExecutor {
     struct DestinationsZKPricesJournalCommitment {
         Steel.Commitment commitment;
         address systemRegistry;
-        uint256 safePriceTimestamp; 
-        uint256 oldestSpotPriceTimestamp; //TODO: add a check that this is the smallest in the zk proof 
-        PriceInfo[] priceInfo; 
+        uint256 safePriceTimestamp;
+        uint256 oldestSpotPriceTimestamp; //TODO: add a check that this is the smallest in the zk proof
+        PriceInfo[] priceInfo;
     }
-    
 }

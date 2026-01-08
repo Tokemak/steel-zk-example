@@ -24,9 +24,7 @@
 // import {IERC20Metadata} from "openzeppelin-contracts/token/ERC20/extensions/IERC20Metadata.sol";
 // import {ERC20FixedSupply} from "../test/Counter.t.sol";
 
-
 // // note based on examples/erc20-counter
-
 
 // /// @notice Deployment script for the Counter contract.
 // /// @dev Use the following environment variable to control the deployment:

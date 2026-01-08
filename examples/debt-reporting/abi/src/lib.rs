@@ -85,7 +85,8 @@ sol! {
     }
 
     struct DestinationsZKPricesCommitment {
-        Commitment commitment;
+        Commitment commitment; 
+        // should be a uint256
         (address, PackedComputedGetRangePriceLP)[] priceInfo; // destination_vault_address, prices
     }
 }
