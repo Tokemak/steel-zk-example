@@ -19,32 +19,35 @@ pragma solidity ^0.8.20;
 import {IRiscZeroVerifier} from "lib/risc0-ethereum/contracts/src/IRiscZeroSetVerifier.sol";
 import {Steel} from "contracts/src/Steel.sol"; // not sure where to import this
 import {IZKExecutor} from "./IZKExecutor.sol";
+
 import {TransientSlot} from "lib/openzeppelin-contracts/contracts/utils/TransientSlot.sol";
-// might not be used
 import {SlotDerivation} from "lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol";
 
 // cargo build hangs (as of jan 8) not certian what this does
 // import {ImageID} from "./ImageID.sol"; // auto-generated contract after running `cargo build`.
 
 contract ZKExecutor is IZKExecutor {
+    // this is from their docs but confusing didnt know you could do 2 of these using statements
     using StorageSlot for bytes32;
     using SlotDerivation for bytes32;
 
+    // not certain how this part works
     // /// @notice Image ID of the only zkVM binary to accept verification from.
     // bytes32 public constant imageID = ImageID.BALANCE_OF_ID;
 
-    /// @notice RISC Zero verifier contract address.
     IRiscZeroVerifier public immutable verifier;
 
-    /// @notice The Auto Finance System Registry
-    address public immutable systemRegistry;
+    address public immutable systemRegistry; //
+
     /// @notice Will revert if any blocks used for prices are more than this many seconds ago
-    /// maybe make modifyable
+    /// maybe make modifyable not constantss?
 
     // no firm opinions on what these should be
     uint256 public immutable SAFE_PRICE_MAX_LATENCY = 60 * 2; // 2 minutes
     uint256 public immutable SPOT_PRICE_MAX_LATENCY = 60 * 10; // 10 minutes
-    string private constant _NAMESPACE = "AutoFinanceZKDebtReportingV1";
+    
+    // might not be needed
+    string public constant NAMESPACE = "AutoFinanceZKDebtReportingV1";
 
     constructor(IRiscZeroVerifier _verifier, address _systemRegistry) {
         verifier = _verifier;
@@ -68,13 +71,14 @@ contract ZKExecutor is IZKExecutor {
         verifier.verify(seal, imageID, journalHash);
         require(journal.systemRegistry == systemRegistry, "Invalid SystemRegistry used by proof");
         // TODO double check the direction of this math
+        // add unit tests for reverting if using too old of data
         require(
             journal.safePriceTimestamp >= block.timestamp - SAFE_PRICE_MAX_LATENCY,
-            "Safe price not within SAFE_PRICE_MAX_LATENCY second of current block "
+            "Safe price not within SAFE_PRICE_MAX_LATENCY seconds of the current block "
         );
         require(
             journal.oldestSpotPriceTimestamp >= block.timestamp - SPOT_PRICE_MAX_LATENCY,
-            "Oldest Spot price not within SAFE_PRICE_MAX_LATENCY second of current block "
+            "Oldest Spot price not within SAFE_PRICE_MAX_LATENCY seconds of the current block "
         );
     }
 
@@ -83,6 +87,8 @@ contract ZKExecutor is IZKExecutor {
         // maybe make this a protected role?
         DestinationsZKPricesJournalCommitment memory journal =
             abi.decode(journalData, (DestinationsZKPricesJournalCommitment));
+
+        // I htink part of the transient storage key needs to be the seal or journal data
         _validateProof(journal);
 
         _loadPriceInfoIntoTransientStorage(journal.priceInfo);
@@ -94,23 +100,14 @@ contract ZKExecutor is IZKExecutor {
         _removePriceInfoFromTransientStorage(journal.priceInfo); // eg set
     }
 
-    // // copied from SlotDerivation (but I changed the types) I think is should still work though
-    // function setValueInNamespace(address key, uint256 newValue) internal {
-    //     _NAMESPACE.erc7201Slot().deriveMapping(key).getAddressSlot().value = newValue;
-    //  }
-
-    // // used by zk root price oracles
-    //  function getValueInNamespace(uint256 key) internal view returns (address) {
-    //    return _NAMESPACE.erc7201Slot().deriveMapping(key).getAddressSlot().value;
-    //  }
-
+    // copied from SlotDerivation (but I changed the types)
     function _loadPriceInfoIntoTransientStorage(PriceInfo[] priceInfo) private {
         // not certain on this pattern here, why are we using the name space?
         // store it packed and have the zk root price oracle unpack it
         // need to understand this part
 
         for (uint256 i = 0; i < priceInfo.length; i++) {
-            _NAMESPACE.erc7201Slot().deriveMapping(priceInfo[i].destinationVaultAddress).getAddressSlot().value =
+            NAMESPACE.erc7201Slot().deriveMapping(priceInfo[i].destinationVaultAddress).getAddressSlot().value =
                 priceInfo[i].packedPrices;
         }
     }
@@ -118,7 +115,7 @@ contract ZKExecutor is IZKExecutor {
     function _removePriceInfoFromTransientStorage(PriceInfo[] priceInfo) private {
         // pretty sure I need to manually remove them here
         for (uint256 i = 0; i < priceInfo.length; i++) {
-            _NAMESPACE.erc7201Slot().deriveMapping(priceInfo[i].destinationVaultAddress).getAddressSlot().value = 0;
+            NAMESPACE.erc7201Slot().deriveMapping(priceInfo[i].destinationVaultAddress).getAddressSlot().value = 0;
         }
     }
 }

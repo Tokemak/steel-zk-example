@@ -89,6 +89,13 @@ sol! {
         // should be a uint256
         (address, PackedComputedGetRangePriceLP)[] priceInfo; // destination_vault_address, prices
     }
+
+    struct Keccak256DestinationsZKPricesCommitment {
+        Commitment commitment; 
+        // might we also need the destination vaults? anywhere adding just in case
+        (bytes32, address, uint256)[] priceInfo; 
+        // keccak256(lp_token, pool, quote_token), destination_vault_address, uint256 version of a PackedComputedGetRangePriceLP
+    }
 }
 
 // required for the BTreeSet and BTreeMap
