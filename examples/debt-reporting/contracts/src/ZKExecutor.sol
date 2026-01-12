@@ -28,7 +28,7 @@ import {SlotDerivation} from "lib/openzeppelin-contracts/contracts/utils/SlotDer
 
 contract ZKExecutor is IZKExecutor {
     // this is from their docs but confusing didnt know you could do 2 of these using statements
-    using StorageSlot for bytes32;
+    using StorageSlot for bytes32; // TODO don't use using but hardcode it
     using SlotDerivation for bytes32;
 
     // not certain how this part works
@@ -45,7 +45,7 @@ contract ZKExecutor is IZKExecutor {
     // no firm opinions on what these should be
     uint256 public immutable SAFE_PRICE_MAX_LATENCY = 60 * 2; // 2 minutes
     uint256 public immutable SPOT_PRICE_MAX_LATENCY = 60 * 10; // 10 minutes
-    
+
     // might not be needed
     string public constant NAMESPACE = "AutoFinanceZKDebtReportingV1";
 
