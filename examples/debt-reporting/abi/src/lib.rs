@@ -57,7 +57,7 @@ sol! {
 sol! {
     #![sol(all_derives)]
     #![sol(extra_derives(serde::Serialize, serde::Deserialize))]
-
+    
     struct DestinationVaultKey {
         address token;
         address pool;
@@ -85,15 +85,15 @@ sol! {
     }
 
     struct DestinationsZKPricesCommitment {
-        Commitment commitment; 
+        Commitment commitment;
         // should be a uint256
         (address, PackedComputedGetRangePriceLP)[] priceInfo; // destination_vault_address, prices
     }
 
     struct Keccak256DestinationsZKPricesCommitment {
-        Commitment commitment; 
+        Commitment commitment;
         // might we also need the destination vaults? anywhere adding just in case
-        (bytes32, address, uint256)[] priceInfo; 
+        (bytes32, address, uint256)[] priceInfo;
         // keccak256(lp_token, pool, quote_token), destination_vault_address, uint256 version of a PackedComputedGetRangePriceLP
     }
 }

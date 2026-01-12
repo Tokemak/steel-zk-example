@@ -15,16 +15,16 @@
 #![no_main]
 #![no_std]
 
-// note need to double check, cite source here
-// need to use this because risc0 guest env does not have access to much of the std library `no_std`
+
 extern crate alloc;
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::{BTreeMap, BTreeSet}; // required since we are in no_std
 use alloc::vec::Vec;
 
 use alloy_primitives::{
     aliases::{U112},
     ruint::UintTryFrom,
-    Address, U256,
+    Address, U256, B256
+    keccak256,
 };
 use alloy_sol_types::SolValue;
 
@@ -41,7 +41,7 @@ use risc0_zkvm::guest::env;
 risc0_zkvm::guest::entry!(main);
 
 /*
-Because of Fulu upgrade on consensus just getting added to steel, this just validates the last part
+Because of Fulu upgrade on consensus just getting added to steel, this just validateSs the last part
 not that every single call came from that block. wait for the latest version of steel to become the stable release
 before using in production, other wise there are no garentuees that the prior blocks are the blocks before the top block
 on mainnet.
@@ -63,7 +63,6 @@ there are issues with telling the complier the type of`some_input.into_env(&ETH_
 //     // make sure that these addresses are right
 //     println!("In Guest, placeholder to validate that the ChainAddressConstants are correct");
 // }
-
 
 
 fn main() {
@@ -166,16 +165,19 @@ fn main() {
     );
 
     let price_info = {
-        let mut price_info: Vec<(Address, PackedComputedGetRangePriceLP)> = Vec::new();
+        // keccak key, packed version of prices
+        let mut price_info: Vec<(B256, PackedComputedGetRangePriceLP)> = Vec::new();
 
         for key in &destination_vault_keys {
-            let packed = build_PackedComputedGetRangePriceLP(
+            // this should be a u256 here instead of PackedComputedGetRangePriceLP
+            let packed: = build_PackedComputedGetRangePriceLP(
                 &key,
                 &key_to_average_spot_price,
                 &latest_block_safe_prices,
                 &unsafe_spot_prices_destinations,
             );
-            let key_price_tuple = (key.destinationVault, packed);
+            let keccak256_key: B256 = compute_transient_storage_slot(key.lp_token, key.pool, key.base_asset)
+            let key_price_tuple = (keccak256_key, packed);
 
             price_info.push(key_price_tuple);
         }
@@ -185,10 +187,18 @@ fn main() {
     // note need to connect the autopool_constants_env with the prices_env here
     let journal = DestinationsZKPricesCommitment {
         commitment: destination_vault_keys_env.into_commitment(),
-        priceInfo: price_info, // treated like a dictionary
+        priceInfo: price_info, // to be written into a transient storage dictionary
     };
 
     env::commit_slice(&journal.abi_encode());
+}
+
+
+pub fn compute_transient_storage_slot(lp_token: Address, pool: Address, quote_token: Address) -> B256 {
+    // TODO check these with fuzz tests edge case is where the tokens are not checksum cases
+    // Solidity: abi.encodePacked(address,address,address) should be 1:1 with
+    let packed = (lp_token, pool, quote_token).abi_encode_packed();
+    keccak256(packed)
 }
 
 fn build_PackedComputedGetRangePriceLP(
@@ -196,7 +206,7 @@ fn build_PackedComputedGetRangePriceLP(
     key_to_average_spot_price: &BTreeMap<DestinationVaultKey, U256>,
     latest_block_safe_prices: &BTreeMap<DestinationVaultKey, U256>,
     unsafe_spot_prices_destinations: &BTreeSet<DestinationVaultKey>,
-) -> PackedComputedGetRangePriceLP {
+) -> U256 {
     /*
     Returns the packed (u112,u112,u8) version of the safe, spot price, 
 
@@ -228,16 +238,27 @@ fn build_PackedComputedGetRangePriceLP(
     let latest_safe_u112: U112 = latest_safe_try.unwrap_or(U112::from(0u8));
 
     let cant_convert_too_big = avg_spot_try.is_err() || latest_safe_try.is_err();
+
+    // not sure if we should panic here
+    if cant_convert_too_big { panic!("One of the prices would not fit in a u112 \n {:?} avg_spot_u112 \n {:?} latest_safe_try", avg_spot_u112, latest_safe_try );
+}
     let all_spot_prices_are_safe = !unsafe_spot_prices_destinations.contains(key);
     let is_spot_safe = (all_spot_prices_are_safe & !cant_convert_too_big) as u8;
 
-    let packed = PackedComputedGetRangePriceLP {
-        averageSpotPriceInQuote: avg_spot_u112,
-        latestSafePriceInQuote: latest_safe_u112,
-        isSpotSafeZK: is_spot_safe,
-    };
+    let packed = pack_u112_u112_u8(avg_spot_u112,  latest_safe_u112,is_spot_safe  )
+
     packed
 }
+
+
+pub fn pack_u112_u112_u8(avg: U112, latest: U112, is_spot_safe_zk: u8) -> U256 {
+    let avg_u256: U256 = U256::from(avg);
+    let latest_u256: U256 = U256::from(latest);
+    let safe_u256: U256 = U256::from(is_spot_safe_zk);
+
+    avg_u256 | (latest_u256 << 112) | (safe_u256 << 224)
+}
+
 
 // go through again for clarity, rewrite
 fn compute_average_spot_price_by_destination_vault(

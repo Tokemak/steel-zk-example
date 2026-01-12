@@ -18,7 +18,7 @@ use risc0_steel::{
 // todo, some kind of validation that the root price oracle -> system registry, and reverse,
 // and that they all point at each other
 // this uses multicall while the guest uses naive seqential logic, not certain on if I want it to be like that
-// the guest is determanistic, and makes no external calls so it is not faster to use multicall
+// the guest is determanistic, and makes no external calls so it is not faster to use multicall inside the the guest
 
 pub async fn preflight_autopool_constants(
     chain_address_constants: ChainAddressConstants,
