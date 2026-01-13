@@ -30,7 +30,7 @@ struct Args {
     #[arg(long, env = "BEACON_API_URL")]
     beacon_api_url: Url,
     #[arg(long, env = "ALL_AUTOPOOLS")]
-    all_autopools: bool,
+    all_autopools: bool, // todo remove just for ease of testing
 }
 
 fn stub_read_cli_args(all_autopools: bool) -> ChainAddressConstants {
@@ -72,7 +72,8 @@ async fn main() -> Result<()> {
     let chain_address_constants: ChainAddressConstants = stub_read_cli_args(args.all_autopools);
     let provider: RootProvider = ProviderBuilder::default().connect_http(args.rpc_url);
 
-    let latest = provider.get_block_number().await?;
+    // the block right before the current block
+    let latest = provider.get_block_number().await? - 1;
     println!("Starting Destination Vault Keys Preflight");
     println!(
         "Number of autopools {:?}",

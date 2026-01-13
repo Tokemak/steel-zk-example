@@ -12,6 +12,7 @@ library PackedGetRangePriceLPCodec {
 
     uint256 private constant MASK_112 = uint256(type(uint112).max);
     // todo double check this math to make sure it is bit packing right
+
     function unpack(PackedComputedGetRangePriceLP memory p) internal pure returns (uint256 out) {
         out = uint256(p.averageSpotPriceInQuote) | (uint256(p.latestSafePriceInQuote) << 112)
             | (uint256(p.isSpotSafeZK) << 224);

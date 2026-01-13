@@ -5,7 +5,7 @@ members = [ "abi","host","methods"]
 
 [workspace.dependencies]
 # Intra-workspace dependencies
-risc0-steel = { path = "../../crates/steel" }
+risc0-steel = { git = "https://github.com/boundless-xyz/steel", tag = "v2.4.1" }
 
 # risc0 monorepo dependencies.
 risc0-build = { version = "3.0" }

@@ -1,5 +1,5 @@
-use debt_reporting_abi::DestinationsZKPricesCommitment;
 use alloy_primitives::{aliases::U112, ruint::UintTryFrom, B256, U256};
+use debt_reporting_abi::DestinationsZKPricesCommitment;
 
 fn mask_112() -> U256 {
     (U256::from(1u8) << 112) - U256::from(1u8)
@@ -90,7 +90,10 @@ pub fn stub_post_commitment_onchain(c: DestinationsZKPricesCommitment) {
         }
         println!("    avgSpot:      {}", U256::from(avg_u112));
         println!("    latestSafe:   {}", U256::from(latest_u112));
-        println!("    isSpotSafe:   {} (raw flag {})", is_spot_safe, raw_flag_u8);
+        println!(
+            "    isSpotSafe:   {} (raw flag {})",
+            is_spot_safe, raw_flag_u8
+        );
 
         println!("------------------------------------------------------------------");
     }

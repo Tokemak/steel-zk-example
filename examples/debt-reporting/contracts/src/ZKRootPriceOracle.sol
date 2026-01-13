@@ -10,7 +10,7 @@ import {TransientSlot} from "lib/openzeppelin-contracts/contracts/utils/Transien
 import {SlotDerivation} from "lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol";
 
 contract ZKRootPriceOracle is IZKRootPriceOracle {
-   using SlotDerivation for bytes32;
+    using SlotDerivation for bytes32;
 
     address public immutable systemRegistry;
     string public constant NAMESPACE = "AutoFinanceZKDebtReportingV1";

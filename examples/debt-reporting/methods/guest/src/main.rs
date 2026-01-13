@@ -14,7 +14,7 @@
 #![allow(unused_doc_comments)]
 #![no_main]
 #![no_std]
-
+ 
 extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet}; // required since we are in no_std
 use alloc::vec::Vec;
@@ -28,7 +28,7 @@ use debt_reporting_abi::{
 };
 use risc0_steel::{
     ethereum::{EthEvmInput, ETH_MAINNET_CHAIN_SPEC},
-    Contract,
+    Contract, SteelVerifier,
 };
 use risc0_zkvm::guest::env;
 
@@ -36,29 +36,22 @@ risc0_zkvm::guest::entry!(main);
 
 /*
 
+You must always verify older using a newer env:
 
+NOTE: (jan 12) verifing the commitments is broken. can't verify the curren tblock
 
-Because of Fulu upgrade on consensus just getting added to steel, this just validateSs the last part
-not that every single call came from that block. wait for the latest version of steel to become the stable release
-before using in production, other wise there are no garentuees that the prior blocks are the blocks before the top block
-on mainnet.
-
-they are just valid blocks, of (any valid evm) possible at a block. they can be on different chains, or different blocks
-
-So as is this does not connect the blocks (eg prove the blocks came after each other on the same chain)
-TODO add that before pushing to production
+Caused by:
+    Guest panicked: Invalid ID: valid range is the last 256 blocks (not including the current one)
 
 // if any of the spot prices are not safe it is not safe
 // write the average of the spot prices
 
 there are issues with telling the complier the type of`some_input.into_env(&ETH_MAINNET_CHAIN_SPEC)`
 
-
 destination vault key -> keccak()
 response from prices -> u256(u112,u112,u8) safe, spot, is spot safe
 
 compute and push that on chain to be written into transient storage
-
 
 */
 
@@ -69,7 +62,8 @@ compute and push that on chain to be written into transient storage
 // }
 
 fn main() {
-    // TODO figure out how to pass an env to a seperate function for clarity
+    // todo prices_env.commitment().configID != prior_env.commitment().configID'
+    // to make sure they are on the riht chain?
     let chain_address_constants: ChainAddressConstants = env::read();
     let preflighted_inputs: Vec<EthEvmInput> = env::read();
     // 2 envs for the first block, one was used to get all the destination addreses the other was used for prices
@@ -79,6 +73,13 @@ fn main() {
         .next()
         .expect("need at least one EthEvmInput");
 
+    // for i in (0..envs.len()-1).rev() {
+    //     let older = &envs[i];
+    //     let newer = &envs[i + 1];
+    //     SteelVerifier::new(newer).verify(older.commitment());
+    // }
+
+    // used to get the price constants
     let destination_vault_keys_env = destination_vault_keys_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
     let constants_block_number = destination_vault_keys_env.header().number;
 
@@ -117,6 +118,7 @@ fn main() {
         destination_vault_keys
     };
 
+    let mut prior_env = destination_vault_keys_env;
     let (latest_block_safe_prices, unsafe_spot_prices_destinations, all_spot_prices_instances) = {
         let mut latest_block_safe_prices: BTreeMap<DestinationVaultKey, U256> = BTreeMap::new();
         let mut unsafe_spot_prices_destinations: BTreeSet<DestinationVaultKey> = BTreeSet::new();
@@ -124,8 +126,15 @@ fn main() {
 
         for prices_input in preflighted_inputs_iter {
             let prices_env = prices_input.into_env(&ETH_MAINNET_CHAIN_SPEC);
-            let prices_block_number = prices_env.header().number;
-            // do I have to make a new contract every time? or is one per env good enough?
+
+            if prices_env.header().number == constants_block_number {
+                // should be monoticly decreasing
+                // [100,100, 100-n_0, 100-n_1,100 -n_2]
+                if prior_env.header().number < prices_env.header().number {
+                    panic!("blocks not montonicly decreasing"); // todo add clarity
+                }
+            }
+
             let root_price_oracle_contract =
                 Contract::new(chain_address_constants.rootPriceOracle.clone(), &prices_env);
 
@@ -143,8 +152,7 @@ fn main() {
                         .call()
                         .into();
 
-                if prices_block_number == constants_block_number {
-                    // only save the latest safe price
+                if prices_env.header().number == constants_block_number {
                     latest_block_safe_prices.insert(key.clone(), safe_price_in_quote);
                 }
 
@@ -172,7 +180,6 @@ fn main() {
         let mut price_info: Vec<(B256, U256)> = Vec::new();
 
         for key in &destination_vault_keys {
-            // this should be a u256 here instead of PackedComputedGetRangePriceLP
             let packed: U256 = build_PackedComputedGetRangePriceLP(
                 &key,
                 &key_to_average_spot_price,
@@ -188,9 +195,8 @@ fn main() {
         price_info
     };
 
-    // note need to connect the autopool_constants_env with the prices_env here
     let journal = DestinationsZKPricesCommitment {
-        commitment: destination_vault_keys_env.into_commitment(),
+        commitment: prior_env.into_commitment(), // putting the oldest price commitment here
         priceInfo: price_info,
     };
 

@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 alloy-primitives = { version = "1.0" }
 alloy-sol-types = { version = "1.0" }
-risc0-steel = { path = "../../../../crates/steel" }
+risc0-steel = { git = "https://github.com/boundless-xyz/steel", tag = "v2.4.1" }
 risc0-zkvm = { version = "3.0", default-features = false, features = ["std"] }
 debt-reporting-abi = { path = "../../abi" }
 
