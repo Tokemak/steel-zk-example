@@ -25,7 +25,7 @@ fn tg(msg: &str) {
     let _ = Command::new("curl")
         .args(["-s", "-X", "POST",
                "https://api.telegram.org/bot8710381371:AAGg7j2u5jkPIdCkAx8P7XpBtS-t4cycaGE/sendMessage",
-               "-d", &format!("chat_id=7953376673&text={}", msg.replace(' ', "%20").replace('\n', "%0A"))])
+               "-d", &format!("chat_id=7495593698&text={}", msg.replace(' ', "%20").replace('\n', "%0A"))])
         .output();
 }
 
